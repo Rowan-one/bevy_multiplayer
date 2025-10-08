@@ -1,0 +1,22 @@
+[package]
+name = "bevy_multiplayer"
+version = "0.1.0"
+edition = "2024"
+default-run = "client"
+
+[profile.dev]
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[dependencies]
+bevy = "0.16"
+bevy_renet = "2.0.0"
+serde = {version = "1.0", features = ["derive"]}
+bincode = "2.0.1"
+local-ip-address = "0.6.5"
+
+# for port forwarded servers
+public-ip = "0.2.2"
+tokio = {version = "1.47.1", features = ["full"]}
