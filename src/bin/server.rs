@@ -35,22 +35,39 @@ fn main() {
     app.insert_resource(server);
     app.insert_resource(transport);
 
-    app.add_systems(Update, server_update_system);
+    app.add_systems(Update, handle_events_system);
+    app.add_systems(Update, server_ping_system);
 
     app.run();
 }
 
-fn server_update_system(mut server_events: EventReader<ServerEvent>) {
+fn handle_events_system(mut server_events: EventReader<ServerEvent>) {
     for event in server_events.read() {
         match event {
             ServerEvent::ClientConnected { client_id } => {
                 info!("Client connected: {}", client_id);
             },
             ServerEvent::ClientDisconnected { client_id, reason } => {
-                info!("Client disconnected: {}", client_id);
+                info!("Client {} disconnected: {}", client_id, reason);
             },
         }
     }
 }
 
-// Systems
+fn server_ping_system(mut server: ResMut<RenetServer>) {
+    let reliable_channel_id: u8 = 1;
+    let config = bincode::config::standard();
+
+    for client_id in server.clients_id().into_iter() {
+        while let Some(message) = server.receive_message(client_id, reliable_channel_id) {
+            let client_message: (ClientMessage, usize) = bincode::serde::decode_from_slice(&message, config).unwrap();
+            match client_message.0 {
+                ClientMessage::Ping => {
+                    info!("Got ping from {}!", client_id);
+                    let pong = bincode::serde::encode_to_vec(&ServerMessage::Pong, config).unwrap();
+                    server.send_message(client_id, reliable_channel_id, pong);
+                }
+            }
+        }
+    }
+}

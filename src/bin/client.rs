@@ -1,11 +1,13 @@
-use bevy::{prelude::*, state::app};
+use bevy::prelude::*;
 use local_ip_address::local_ip;
 use bevy_multiplayer::*;
-use bevy_renet::{netcode::{ClientAuthentication, NetcodeClientPlugin, NetcodeClientTransport}, *};
+use bevy_renet::netcode::*;
+use bevy_renet::*;
 use std::{
     net::{SocketAddr, UdpSocket},
     time::SystemTime,
 };
+use bincode::*;
 
 fn new_renet_client() -> (RenetClient, NetcodeClientTransport) {
     let server_addr = "127.0.0.1:5000".parse().unwrap();
@@ -29,12 +31,32 @@ fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins);
     app.add_plugins(RenetClientPlugin);
-    app.add_plugins(NetcodeClientPlugin);
+    app.add_plugins(NetcodeClientPlugin);           
 
     let (client, transport) = new_renet_client();
     app.insert_resource(client);
     app.insert_resource(transport);
 
+    app.add_systems(Update, client_ping_system);
+
     app.run();
 }
 
+fn client_ping_system(mut client: ResMut<RenetClient>, keyboard: Res<ButtonInput<KeyCode>>) {
+    let config = bincode::config::standard();
+
+    if keyboard.just_pressed(KeyCode::Space) {
+        let ping_message = bincode::serde::encode_to_vec(&ClientMessage::Ping, config).unwrap();
+        client.send_message(DefaultChannel::ReliableOrdered, ping_message);
+        info!("Sent ping!")
+    }
+
+    while let Some(message) = client.receive_message(DefaultChannel::ReliableOrdered) {
+        let server_message: (ServerMessage, usize) = bincode::serde::decode_from_slice(&message, config).unwrap();
+        match server_message.0 {
+            ServerMessage::Pong => {
+                info!("Got pong!");
+            }
+        }
+    }
+}
