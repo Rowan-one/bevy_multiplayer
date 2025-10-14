@@ -1,11 +1,24 @@
-use std::net::{SocketAddr, UdpSocket};
+use std::net::UdpSocket;
 use std::time::SystemTime;
-use bevy::{log::LogPlugin, prelude::*};
-use bevy_renet::netcode::{NetcodeServerPlugin, NetcodeServerTransport, ServerAuthentication, ServerConfig};
-use bevy_renet::{RenetServerPlugin};
-use bevy_renet::renet::{RenetServer};
+use std::collections::HashMap;
+use bevy::prelude::*;
+use crate::shared::events::PlayerInputEvent;
+use crate::shared::networking::connection_config;
+use bevy_renet::netcode::*;
+use bevy_renet::RenetServerPlugin;
+use bevy_renet::renet::RenetServer;
 use bevy_multiplayer::*;
-use local_ip_address::linux::local_ip;
+use crate::server::networking::receive_player_input;
+
+#[derive(Debug, Component)]
+struct Player {
+    id: ClientId
+}
+
+#[derive(Debug, Default, Resource)]
+struct Lobby {
+    players: HashMap<ClientId, Entity>
+}
 
 fn new_renet_server() -> (RenetServer, NetcodeServerTransport) {
     let public_addr = "127.0.0.1:5000".parse().unwrap();
@@ -20,7 +33,7 @@ fn new_renet_server() -> (RenetServer, NetcodeServerTransport) {
     };
 
     let transport = NetcodeServerTransport::new(server_config, socket).unwrap();
-    let server = RenetServer::new(ConnectionConfig::default());
+    let server = RenetServer::new(connection_config());
 
     (server, transport)
 }
@@ -35,13 +48,16 @@ fn main() {
     app.insert_resource(server);
     app.insert_resource(transport);
 
+    app.add_systems(Startup, (setup_level, setup_simple_camera));
     app.add_systems(Update, handle_events_system);
-    app.add_systems(Update, server_ping_system);
+    app.add_systems(Update, receive_player_input);
+
+    app.add_message::<PlayerInputEvent>();
 
     app.run();
 }
 
-fn handle_events_system(mut server_events: EventReader<ServerEvent>) {
+fn handle_events_system(mut server_events: MessageReader<ServerEvent>) {
     for event in server_events.read() {
         match event {
             ServerEvent::ClientConnected { client_id } => {
@@ -54,20 +70,10 @@ fn handle_events_system(mut server_events: EventReader<ServerEvent>) {
     }
 }
 
-fn server_ping_system(mut server: ResMut<RenetServer>) {
-    let reliable_channel_id: u8 = 1;
-    let config = bincode::config::standard();
-
-    for client_id in server.clients_id().into_iter() {
-        while let Some(message) = server.receive_message(client_id, reliable_channel_id) {
-            let client_message: (ClientMessage, usize) = bincode::serde::decode_from_slice(&message, config).unwrap();
-            match client_message.0 {
-                ClientMessage::Ping => {
-                    info!("Got ping from {}!", client_id);
-                    let pong = bincode::serde::encode_to_vec(&ServerMessage::Pong, config).unwrap();
-                    server.send_message(client_id, reliable_channel_id, pong);
-                }
-            }
-        }
-    }
+pub fn setup_simple_camera(mut commands: Commands) {
+    // camera
+    commands.spawn((
+        Camera3d::default(),
+        Transform::from_xyz(-20.5, 30.0, 20.5).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
 }

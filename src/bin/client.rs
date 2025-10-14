@@ -1,13 +1,13 @@
 use bevy::prelude::*;
 use local_ip_address::local_ip;
-use bevy_multiplayer::*;
+use bevy_multiplayer::{shared::networking::connection_config, *};
 use bevy_renet::netcode::*;
-use bevy_renet::*;
 use std::{
-    net::{SocketAddr, UdpSocket},
+    net::UdpSocket,
     time::SystemTime,
 };
-use bincode::*;
+use shared::events::PlayerInputEvent;
+use client::networking::send_player_inputs;
 
 fn new_renet_client() -> (RenetClient, NetcodeClientTransport) {
     let server_addr = "127.0.0.1:5000".parse().unwrap();
@@ -22,7 +22,7 @@ fn new_renet_client() -> (RenetClient, NetcodeClientTransport) {
     };
 
     let transport = NetcodeClientTransport::new(current_time, authentication, socket).unwrap();
-    let client = RenetClient::new(ConnectionConfig::default());
+    let client = RenetClient::new(connection_config());
 
     (client, transport)
 }
@@ -37,26 +37,24 @@ fn main() {
     app.insert_resource(client);
     app.insert_resource(transport);
 
-    app.add_systems(Update, client_ping_system);
+    app.add_systems(Startup, (setup_level, setup_camera));
+    app.add_systems(Update, (send_input_system, send_player_inputs));
+
+    app.add_message::<PlayerInputEvent>();
 
     app.run();
 }
 
-fn client_ping_system(mut client: ResMut<RenetClient>, keyboard: Res<ButtonInput<KeyCode>>) {
-    let config = bincode::config::standard();
-
-    if keyboard.just_pressed(KeyCode::Space) {
-        let ping_message = bincode::serde::encode_to_vec(&ClientMessage::Ping, config).unwrap();
-        client.send_message(DefaultChannel::ReliableOrdered, ping_message);
-        info!("Sent ping!")
+fn send_input_system(mut client: ResMut<RenetClient>, keyboard: Res<ButtonInput<KeyCode>>, mut event_writer: MessageWriter<PlayerInputEvent>) {
+    if keyboard.just_pressed(KeyCode::KeyE) {
+        println!("Writing input event");
+        event_writer.write(PlayerInputEvent { direction: Vec2::new(1.,0.) });
     }
+}
 
-    while let Some(message) = client.receive_message(DefaultChannel::ReliableOrdered) {
-        let server_message: (ServerMessage, usize) = bincode::serde::decode_from_slice(&message, config).unwrap();
-        match server_message.0 {
-            ServerMessage::Pong => {
-                info!("Got pong!");
-            }
-        }
-    }
+fn setup_camera(mut commands: Commands) {
+    commands.spawn((
+        Camera3d::default(),
+        Transform::from_xyz(0., 8.0, 2.5).looking_at(Vec3::new(0.0, 0.5, 0.0), Vec3::Y),
+    ));
 }
