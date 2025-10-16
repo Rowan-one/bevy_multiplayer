@@ -1,24 +1,17 @@
 use std::net::UdpSocket;
 use std::time::SystemTime;
-use std::collections::HashMap;
 use bevy::prelude::*;
-use crate::shared::events::PlayerInputEvent;
-use crate::shared::networking::connection_config;
+use bevy_egui::*;
+use bevy_multiplayer::server::ServerPlugin;
+use renet_visualizer::*;
 use bevy_renet::netcode::*;
 use bevy_renet::RenetServerPlugin;
 use bevy_renet::renet::RenetServer;
 use bevy_multiplayer::*;
-use crate::server::networking::receive_player_input;
-
-#[derive(Debug, Component)]
-struct Player {
-    id: ClientId
-}
-
-#[derive(Debug, Default, Resource)]
-struct Lobby {
-    players: HashMap<ClientId, Entity>
-}
+use crate::server::networking::*;
+use crate::shared::networking::connection_config;
+use crate::server::messages::ClientConnectMessage;
+use crate::shared::networking::setup_level;
 
 fn new_renet_server() -> (RenetServer, NetcodeServerTransport) {
     let public_addr = "127.0.0.1:5000".parse().unwrap();
@@ -43,31 +36,36 @@ fn main() {
     app.add_plugins(DefaultPlugins);
     app.add_plugins(RenetServerPlugin);
     app.add_plugins(NetcodeServerPlugin);
+    app.add_plugins(EguiPlugin::default());
+
+    app.add_plugins(ServerPlugin);
+
+    app.insert_resource(RenetServerVisualizer::<200>::default());
+    app.insert_resource(ServerLobby::default());
 
     let (server, transport) = new_renet_server();
     app.insert_resource(server);
     app.insert_resource(transport);
 
-    app.add_systems(Startup, (setup_level, setup_simple_camera));
-    app.add_systems(Update, handle_events_system);
-    app.add_systems(Update, receive_player_input);
+    app.add_systems(Startup, (
+        setup_simple_camera,
+    ));
 
-    app.add_message::<PlayerInputEvent>();
+    app.add_systems(EguiPrimaryContextPass, update_visualizer_system);
+
+    app.add_message::<ClientConnectMessage>();
 
     app.run();
 }
 
-fn handle_events_system(mut server_events: MessageReader<ServerEvent>) {
-    for event in server_events.read() {
-        match event {
-            ServerEvent::ClientConnected { client_id } => {
-                info!("Client connected: {}", client_id);
-            },
-            ServerEvent::ClientDisconnected { client_id, reason } => {
-                info!("Client {} disconnected: {}", client_id, reason);
-            },
-        }
-    }
+fn update_visualizer_system(
+    mut egui_contexts: EguiContexts,
+    mut visualizer: ResMut<RenetServerVisualizer<200>>,
+    server: Res<RenetServer>,
+) -> Result<()> {
+    visualizer.update(&server);
+    visualizer.show_window(egui_contexts.ctx_mut()?);
+    Ok(())
 }
 
 pub fn setup_simple_camera(mut commands: Commands) {
@@ -77,3 +75,4 @@ pub fn setup_simple_camera(mut commands: Commands) {
         Transform::from_xyz(-20.5, 30.0, 20.5).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 }
+
