@@ -2,6 +2,9 @@
 members = [
     "crates/shared",
     "crates/client",
+    "crates/server",
+    "crates/game",
+    "crates/networking",
 ]
 resolver = "2"
 
@@ -10,9 +13,11 @@ edition = "2024"
 
 [workspace.dependencies]
 bevy = "0.17.2"
+bevy_ecs = "0.17.2"
 bevy_renet = "3.0.0"
 bincode = { version = "2.0.1", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
+glam = "0.30.8"
 
 # bevy_egui = "0.37"
 # renet_visualizer = {version = "1", features = ["bevy"]}

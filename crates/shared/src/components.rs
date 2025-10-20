@@ -1,10 +1,10 @@
-use bevy::prelude::*;
-use bevy_renet::renet::ClientId;
-use serde::{Deserialize, Serialize};
+use bevy_ecs::prelude::*;
+use serde::{Serialize, Deserialize};
+use glam::Vec3;
 
 #[derive(Debug, Component)]
 pub struct Player {
-    pub id: ClientId,
+    pub client_id: u64,
 }
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Component, Resource)]
@@ -14,3 +14,6 @@ pub struct PlayerInput {
     pub left: bool,
     pub right: bool,
 }
+
+#[derive(Debug, Default, Component)]
+pub struct Velocity(pub Vec3);

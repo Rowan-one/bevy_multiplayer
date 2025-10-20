@@ -1,10 +1,11 @@
-An open world PvPvE game with an emphasis on engaging, variable, high skill ceiling combat and accessability
+An open world PvPvE game with an emphasis on engaging, variable, high skill ceiling combat and customizability.
 
-#################################
-coding notes:
+#######################################################################
+
+dev notes:
 
 client - input, ui, audio, vfx
 server - authority, simulation, persistance
 shared - "data only"
 game - gameplay logic
-protocol - renet configs, versions, no actual gameplay
+networking - client <-> server "glue" -- client <-networking-> server

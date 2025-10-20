@@ -5,7 +5,9 @@ edition = "2024"
 
 [dependencies]
 bevy = { workspace = true }
-bevy_renet = { workspace = true }
+shared = { path = "../shared" }
+networking = { path = "../networking" }
+game = { path = "../game" }
 
 [profile.dev]
 opt-level = 0
