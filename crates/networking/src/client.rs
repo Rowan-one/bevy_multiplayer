@@ -1,25 +1,31 @@
-use std::{net::UdpSocket, time::SystemTime};
+use std::{collections::HashMap, net::UdpSocket, time::SystemTime};
 use bevy::prelude::*;
 use bevy_renet::{netcode::{ClientAuthentication, NetcodeClientPlugin, NetcodeClientTransport}, renet::RenetClient, RenetClientPlugin};
 use super::protocol::*;
 use shared::components::PlayerInput;
+use bevy_replicon::prelude::*;
+use bevy_replicon_renet::*;
 
 pub struct NetClientPlugin;
 
 impl Plugin for NetClientPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(RenetClientPlugin);
-        app.add_plugins(NetcodeClientPlugin);
+        //app.add_plugins(RenetClientPlugin);
+        //app.add_plugins(NetcodeClientPlugin);
+        app.add_plugins((RepliconPlugins, RepliconRenetPlugins));
 
-        let (client, transport) = new_renet_client();
-        app.insert_resource(client);
-        app.insert_resource(transport);
+        app.add_systems(Startup, setup_renet_client);
 
-        app.add_systems(Update, send_player_input);
+        app.add_systems(Update, (
+            send_player_input,
+        ));
     }
 }
 
-fn new_renet_client() -> (RenetClient, NetcodeClientTransport) {
+fn setup_renet_client(
+    mut commands: Commands,
+    replicon_channels: Res<RepliconChannels>,
+) {
     let server_addr = "127.0.0.1:5000".parse().unwrap();
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
     let current_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
@@ -32,9 +38,10 @@ fn new_renet_client() -> (RenetClient, NetcodeClientTransport) {
     };
 
     let transport = NetcodeClientTransport::new(current_time, authentication, socket).unwrap();
-    let client = RenetClient::new(connection_config());
+    let client = RenetClient::new(connection_config(replicon_channels));
 
-    (client, transport)
+    commands.insert_resource(client);
+    commands.insert_resource(transport);
 }
 
 fn send_player_input(

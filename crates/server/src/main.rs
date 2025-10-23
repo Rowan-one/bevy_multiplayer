@@ -1,14 +1,10 @@
 use bevy::prelude::*;
+use bevy_replicon::prelude::*;
 use networking::server::*;
 use shared::components::*;
 use game::setup_level;
 
 const PLAYER_MOVE_SPEED: f32 = 5.0;
-
-#[derive(Debug, Default, Resource)]
-pub struct ServerLobby {
-    pub players: HashMap<ClientId, Entity>
-}
 
 fn main() {
     App::new()
@@ -49,6 +45,7 @@ fn spawn_player_system(
                 Mesh3d(meshes.add(Mesh::from(Capsule3d::default()))),
                 MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
                 Transform::from_xyz(0., 0.51, 0.),
+                Replicated,
             ))
             .insert(PlayerInput::default())
             .insert(Player {client_id: message.client_id as u64})

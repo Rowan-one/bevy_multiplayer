@@ -14,7 +14,11 @@ edition = "2024"
 [workspace.dependencies]
 bevy = "0.17.2"
 bevy_ecs = "0.17.2"
+bevy_replicon = "0.36"
+bevy_replicon_renet = "0.12"
 bevy_renet = "3.0.0"
+bevy_rapier3d = "0.31.0"
+
 bincode = { version = "2.0.1", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 glam = "0.30.8"

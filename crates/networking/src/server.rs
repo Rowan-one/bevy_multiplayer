@@ -1,19 +1,25 @@
-use std::{collections::HashMap, net::UdpSocket, time::SystemTime};
+use std::{net::UdpSocket, time::SystemTime};
 use bevy::prelude::*;
-use bevy_renet::{netcode::{NetcodeServerPlugin, NetcodeServerTransport, ServerAuthentication, ServerConfig}, renet::*, RenetServerPlugin};
+use bevy_renet::{netcode::*, renet::{ClientId, *}, RenetServerPlugin};
 use shared::components::*;
+use bevy_replicon::prelude::*;
+use bevy_replicon_renet::*;
 use super::protocol::*;
+use super::replication::*;
 
+#[derive(Message)]
+pub struct ClientConnectMessage {
+    pub client_id: ClientId,
+}
 pub struct NetServerPlugin;
 
 impl Plugin for NetServerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(RenetServerPlugin);
-        app.add_plugins(NetcodeServerPlugin);
+        //app.add_plugins(RenetServerPlugin);
+        //app.add_plugins(NetcodeServerPlugin);
+        app.add_plugins((RepliconPlugins, RepliconRenetPlugins));
 
-        let (server, transport) = new_renet_server();
-        app.insert_resource(server);
-        app.insert_resource(transport);
+        app.add_systems(Startup, setup_renet_server);
 
         app.add_systems(Update, (
             handle_events_system,
@@ -24,12 +30,10 @@ impl Plugin for NetServerPlugin {
     }
 }
 
-#[derive(Message)]
-pub struct ClientConnectMessage {
-    pub client_id: ClientId,
-}
-
-pub fn new_renet_server() -> (RenetServer, NetcodeServerTransport) {
+fn setup_renet_server(
+    mut commands: Commands,
+    replicon_channels: Res<RepliconChannels>,
+) {
     let public_addr = "127.0.0.1:5000".parse().unwrap();
     let socket = UdpSocket::bind(public_addr).unwrap();
     let current_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
@@ -42,12 +46,13 @@ pub fn new_renet_server() -> (RenetServer, NetcodeServerTransport) {
     };
 
     let transport = NetcodeServerTransport::new(server_config, socket).unwrap();
-    let server = RenetServer::new(connection_config());
+    let server = RenetServer::new(connection_config(replicon_channels));
 
-    (server, transport)
+    commands.insert_resource(server);
+    commands.insert_resource(transport);
 }
 
-pub fn handle_events_system(
+fn handle_events_system(
     mut server_events: MessageReader<ServerEvent>,
     mut connect_message: MessageWriter<ClientConnectMessage>,
 ) {
@@ -64,7 +69,7 @@ pub fn handle_events_system(
     }
 }
 
-pub fn receive_player_input(
+fn receive_player_input(
     mut server: ResMut<RenetServer>,
     mut lobby: ResMut<ServerLobby>,
     mut commands: Commands,

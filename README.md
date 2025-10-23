@@ -6,6 +6,6 @@ dev notes:
 
 client - input, ui, audio, vfx
 server - authority, simulation, persistance
-shared - "data only"
+shared - data to be accessed from both client and server
 game - gameplay logic
-networking - client <-> server "glue" -- client <-networking-> server
+networking - client <-net-> server "glue"
