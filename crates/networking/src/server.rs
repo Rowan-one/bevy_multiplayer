@@ -19,14 +19,24 @@ impl Plugin for NetServerPlugin {
         //app.add_plugins(NetcodeServerPlugin);
         app.add_plugins((RepliconPlugins, RepliconRenetPlugins));
 
-        app.add_systems(Startup, setup_renet_server);
+        app.replicate::<Player>();
+        app.replicate::<NetId>();
 
+        app.add_systems(Startup, setup_renet_server);
         app.add_systems(Update, (
             handle_events_system,
-            receive_player_input,
+            receive_input_system,
+        ));
+
+        app.insert_resource(Time::<Fixed>::from_hz(20.));
+        app.add_systems(FixedUpdate, (
+            send_snapshots_system,
         ));
 
         app.add_message::<ClientConnectMessage>();
+
+        app.insert_resource(NetIdGen::default());
+        app.insert_resource(NetIdMap::default());
     }
 }
 
@@ -69,7 +79,7 @@ fn handle_events_system(
     }
 }
 
-fn receive_player_input(
+fn receive_input_system(
     mut server: ResMut<RenetServer>,
     mut lobby: ResMut<ServerLobby>,
     mut commands: Commands,

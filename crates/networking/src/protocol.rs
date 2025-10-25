@@ -6,9 +6,10 @@ use bevy_replicon_renet::{renet::*, RenetChannelsExt};
 pub const PROTOCOL_ID: u64 = 1000;
 
 pub fn connection_config(channels: Res<RepliconChannels>) -> ConnectionConfig {
-    let server_cfg = channels.server_configs();
+    let mut server_cfg = channels.server_configs();
     let mut client_cfg = channels.client_configs();
 
+    server_cfg.extend(ServerChannel::channels_config());
     client_cfg.extend(ClientChannel::channels_config());
 
     ConnectionConfig {
@@ -21,13 +22,13 @@ pub fn connection_config(channels: Res<RepliconChannels>) -> ConnectionConfig {
 }
 
 pub enum ServerChannel {
-    //
+    Replication,
 }
 
 impl From<ServerChannel> for u8 {
     fn from(value: ServerChannel) -> Self {
         match value {
-            //
+            ServerChannel::Replication => 3
         }
     }
 }
@@ -35,7 +36,11 @@ impl From<ServerChannel> for u8 {
 impl ServerChannel {
     pub fn channels_config() -> Vec<ChannelConfig> {
         vec!{
-            //
+            ChannelConfig {
+                channel_id: Self::Replication.into(),
+                max_memory_usage_bytes: 5 * 1024 * 1024,
+                send_type: SendType::Unreliable,
+            }
         }
     }
 }
@@ -47,7 +52,7 @@ pub enum ClientChannel {
 impl From<ClientChannel> for u8 {
     fn from(value: ClientChannel) -> Self {
         match value {
-            ClientChannel::Input => 2
+            ClientChannel::Input => 3
         }
     }
 }

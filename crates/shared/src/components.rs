@@ -3,7 +3,7 @@ use bevy_ecs::prelude::*;
 use serde::{Serialize, Deserialize};
 use glam::Vec3;
 
-#[derive(Debug, Component)]
+#[derive(Debug, Component, Serialize, Deserialize)]
 pub struct Player {
     pub client_id: u64,
 }

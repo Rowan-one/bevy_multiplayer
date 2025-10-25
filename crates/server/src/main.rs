@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy_replicon::prelude::*;
 use networking::server::*;
+use networking::replication::*;
 use shared::components::*;
 use game::setup_level;
 
@@ -13,7 +14,7 @@ fn main() {
 
         .add_systems(Startup, (setup_level, setup_simple_camera))
         .add_systems(Update, (
-            spawn_player_system,
+            spawn_players_system,
             update_player_velocity,
             apply_velocity_system,
         ))
@@ -31,21 +32,24 @@ pub fn setup_simple_camera(mut commands: Commands) {
     ));
 }
 
-fn spawn_player_system(
+fn spawn_players_system(
     mut connect_message: MessageReader<ClientConnectMessage>,
     mut lobby: ResMut<ServerLobby>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut net_id_gen: ResMut<NetIdGen>,
 ) {
     for message in connect_message.read() {
         // spawn player entity
+        let net_id = net_id_gen.next();
         let player_entity = commands
             .spawn((
                 Mesh3d(meshes.add(Mesh::from(Capsule3d::default()))),
                 MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
                 Transform::from_xyz(0., 0.51, 0.),
                 Replicated,
+                net_id,
             ))
             .insert(PlayerInput::default())
             .insert(Player {client_id: message.client_id as u64})

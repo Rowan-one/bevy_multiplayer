@@ -17,5 +17,4 @@ fn update_player_input(
     input.right = keyboard.pressed(KeyCode::KeyD);
     input.up = keyboard.pressed(KeyCode::KeyW);
     input.down = keyboard.pressed(KeyCode::KeyS);
-    println!("Player input: {} {} {} {}", input.left, input.right, input.up, input.down);
 }
