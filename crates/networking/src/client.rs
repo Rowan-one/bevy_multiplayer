@@ -9,6 +9,8 @@ use crate::server::ClientConnectMessage;
 use super::protocol::*;
 use super::replication::*;
 
+const INTERPOLATION_DELAY: f32 = 1.;
+
 pub struct NetClientPlugin;
 
 impl Plugin for NetClientPlugin {
@@ -23,15 +25,16 @@ impl Plugin for NetClientPlugin {
         app.add_systems(Startup, setup_renet_client);
         app.add_systems(Update, (
             send_input_system,
-            detect_players_system,
+            replicate_players_system,
             receive_snapshots_system,
             update_id_map_system,
+            interpolate_entities_system,
         ));
 
         app.add_message::<ClientConnectMessage>();
 
-        app.insert_resource(NetIdGen::default());
         app.insert_resource(NetIdMap::default());
+        app.insert_resource(SnapshotBuffer::default());
     }
 }
 
@@ -67,7 +70,7 @@ fn send_input_system(
 }
 
 
-fn detect_players_system(
+fn replicate_players_system(
     mut commands: Commands,
     query: Query<Entity, (Added<Player>, With<Replicated>)>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -86,7 +89,58 @@ fn update_id_map_system(
     mut id_map: ResMut<NetIdMap>,
 ) {
     for (entity, net_id) in query.iter() {
-        println!("Adding net id {} for replicated entity", net_id.0);
         id_map.0.insert(net_id.0, entity);
+    }
+}
+
+fn interpolate_entities_system(
+    time: Res<Time>,
+    snapshot_buffer: ResMut<SnapshotBuffer>,
+    id_map: ResMut<NetIdMap>,
+    mut transforms: Query<&mut Transform>,
+) {
+    let render_time = time.elapsed_secs() - INTERPOLATION_DELAY;
+
+    // iterate through all entitys' buffers
+    for (net_id, deque) in snapshot_buffer.0.iter() {
+        // make sure we have at least 2 samples
+        if deque.len() < 2 { continue; }
+
+        // get local entity
+        let Some(&entity) = id_map.0.get(net_id) else { continue; };
+        let Ok(mut transform) = transforms.get_mut(entity) else { continue; };
+
+        let samples: Vec<(f32, Vec3)> = deque.iter().copied().collect();
+
+        // find window bracketing render time
+        let mut found = false;
+        let mut s1: (f32, Vec3) = (0., Vec3::ZERO);
+        let mut s2: (f32, Vec3) = (0., Vec3::ZERO);
+        for window in samples.windows(2) {
+            let (t0, p0) = window[0];
+            let (t1, p1) = window[1];
+            if t0 <= render_time && t1 >= render_time {
+                s1 = (t0, p0);
+                s2 = (t1, p1);
+                found = true;
+                break;
+            }
+        }
+
+        if found == false {
+            println!(
+                "brackets: {:?}, {:?}, render: {}",
+                samples.get(samples.len()-2).map(|(t, _)| *t), // -> Option<f32>
+                samples.get(samples.len()-1).map(|(t, _)| *t),
+                render_time
+            );
+        }
+
+        // calculate alpha
+        let denom = (s2.0 - s1.0).max(f32::EPSILON);
+        let a = ((render_time - s1.0) / denom).clamp(0.0, 1.0);
+        println!("Alpha: {}", a);
+
+        transform.translation = s1.1.lerp(s2.1, a);
     }
 }

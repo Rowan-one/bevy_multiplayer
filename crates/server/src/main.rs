@@ -16,7 +16,9 @@ fn main() {
         .add_systems(Update, (
             spawn_players_system,
             update_player_velocity,
-            apply_velocity_system,
+        ))
+        .add_systems(FixedUpdate, (
+            apply_velocity_system.after(update_player_velocity),
         ))
 
         .insert_resource(ServerLobby::default())
@@ -73,7 +75,7 @@ fn update_player_velocity(
     }
 }
 
-fn apply_velocity_system(mut query: Query<(&Velocity, &mut Transform)>, time: Res<Time>) {
+fn apply_velocity_system(mut query: Query<(&Velocity, &mut Transform)>, time: Res<Time<Fixed>>) {
     for (velocity, mut transform) in query.iter_mut() {
         transform.translation += velocity.0 * time.delta_secs();
     }

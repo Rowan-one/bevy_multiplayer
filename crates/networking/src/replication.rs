@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use bevy::prelude::*;
 use bevy_renet::renet::{RenetClient, RenetServer};
@@ -23,6 +23,9 @@ impl NetIdGen {
 #[derive(Debug, Default, Resource)]
 pub struct NetIdMap(pub HashMap<u64, Entity>);
 
+#[derive(Debug, Default, Resource)]
+pub struct SnapshotBuffer(pub HashMap<u64, VecDeque<(f32, Vec3)>>);
+    
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EntitySnap {
     pub id: NetId,
@@ -56,20 +59,34 @@ pub fn send_snapshots_system(
 }
 
 pub fn receive_snapshots_system(
-    mut commands: Commands,
+    time: Res<Time>,
     mut client: ResMut<RenetClient>,
-    id_map: Res<NetIdMap>,
+    mut snapshot_buffer: ResMut<SnapshotBuffer>,
 ) {
     while let Some(message) = client.receive_message(ServerChannel::Replication) {
         // decode message
         let config = bincode::config::standard();
         let (snapshot, _): (Snapshot, usize) = bincode::serde::decode_from_slice(&message, config).unwrap();
 
-        // apply snapshot transforms to client entities
+        // add all entity snapshots to buffer resource
         for entity_snap in snapshot.entities.iter() {
-            if let Some(entity) = id_map.0.get(&entity_snap.id.0) {
-                commands.entity(*entity).insert(Transform::from_translation(entity_snap.position));
-            }
+            let elapsed_time = time.elapsed_secs();
+
+            // get existing entity buffer or create new one
+            let buf = snapshot_buffer.0
+                .entry(entity_snap.id.0)
+                .or_default();
+
+            // append new snap to back of queue
+            buf.push_back((
+                elapsed_time,
+                entity_snap.position,
+            ));
+
+            // trim length of buffer
+            while buf.len() > 16 {
+                buf.pop_front();
+            }             
         }
     }
 }

@@ -5489,6 +5489,7 @@ name = "server"
 version = "0.1.0"
 dependencies = [
  "bevy 0.17.2",
+ "bevy_rapier3d",
  "bevy_replicon",
  "game",
  "networking",

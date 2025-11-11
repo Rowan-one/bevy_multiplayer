@@ -28,7 +28,7 @@ impl Plugin for NetServerPlugin {
             receive_input_system,
         ));
 
-        app.insert_resource(Time::<Fixed>::from_hz(20.));
+        app.insert_resource(Time::<Fixed>::from_hz(1.));
         app.add_systems(FixedUpdate, (
             send_snapshots_system,
         ));
@@ -36,7 +36,6 @@ impl Plugin for NetServerPlugin {
         app.add_message::<ClientConnectMessage>();
 
         app.insert_resource(NetIdGen::default());
-        app.insert_resource(NetIdMap::default());
     }
 }
 
