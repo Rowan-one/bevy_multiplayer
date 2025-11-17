@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use client::plugins::{camera::ClientCameraPlugin, input::ClientInputPlugin};
+use client::plugins::{camera::ClientCameraPlugin, input::ClientInputPlugin, player::ClientPlayerPlugin};
 use networking::client::NetClientPlugin;
 use game::setup_level;
 
@@ -9,6 +9,7 @@ fn main() {
         .add_plugins((
             ClientInputPlugin,
             ClientCameraPlugin,
+            ClientPlayerPlugin,
             NetClientPlugin,
         ))
 

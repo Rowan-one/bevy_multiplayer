@@ -1,7 +1,7 @@
 use std::{net::UdpSocket, time::SystemTime};
 use bevy::prelude::*;
-use bevy_renet::{netcode::*, renet::{ClientId, *}, RenetServerPlugin};
-use shared::components::*;
+use bevy_renet::{netcode::*, renet::{ClientId, *}};
+use shared::{components::*, messages::AssignLocalPlayerMessage};
 use bevy_replicon::prelude::*;
 use bevy_replicon_renet::*;
 use super::protocol::*;
@@ -11,6 +11,7 @@ use super::replication::*;
 pub struct ClientConnectMessage {
     pub client_id: ClientId,
 }
+
 pub struct NetServerPlugin;
 
 impl Plugin for NetServerPlugin {
@@ -26,14 +27,12 @@ impl Plugin for NetServerPlugin {
         app.add_systems(Update, (
             handle_events_system,
             receive_input_system,
-        ));
-
-        app.insert_resource(Time::<Fixed>::from_hz(1.));
-        app.add_systems(FixedUpdate, (
             send_snapshots_system,
+            send_local_player_system,
         ));
 
         app.add_message::<ClientConnectMessage>();
+        app.add_message::<AssignLocalPlayerMessage>();
 
         app.insert_resource(NetIdGen::default());
     }
@@ -80,7 +79,7 @@ fn handle_events_system(
 
 fn receive_input_system(
     mut server: ResMut<RenetServer>,
-    mut lobby: ResMut<ServerLobby>,
+    lobby: ResMut<ServerLobby>,
     mut commands: Commands,
 ) {
     let config = bincode::config::standard();
@@ -92,5 +91,19 @@ fn receive_input_system(
                 commands.entity(*player_entity).insert(input);
             }
         }
+    }
+}
+
+fn send_local_player_system(
+    mut renet_server: ResMut<RenetServer>,
+    mut assign_local_player_message: MessageReader<AssignLocalPlayerMessage>,
+) {
+    for message in assign_local_player_message.read() {
+        // encode assign local player struct
+        let config = bincode::config::standard();
+        let encoded_message = bincode::serde::encode_to_vec(&message.0, config).unwrap();
+        
+        // send assign local player struct
+        renet_server.send_message(message.0.client_id, ServerChannel::AssignLocalPlayer, encoded_message);
     }
 }

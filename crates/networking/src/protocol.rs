@@ -23,12 +23,14 @@ pub fn connection_config(channels: Res<RepliconChannels>) -> ConnectionConfig {
 
 pub enum ServerChannel {
     Replication,
+    AssignLocalPlayer,
 }
 
 impl From<ServerChannel> for u8 {
     fn from(value: ServerChannel) -> Self {
         match value {
-            ServerChannel::Replication => 3
+            ServerChannel::Replication => 3,
+            ServerChannel::AssignLocalPlayer => 4,
         }
     }
 }
@@ -40,6 +42,11 @@ impl ServerChannel {
                 channel_id: Self::Replication.into(),
                 max_memory_usage_bytes: 5 * 1024 * 1024,
                 send_type: SendType::Unreliable,
+            },
+            ChannelConfig {
+                channel_id: Self::AssignLocalPlayer.into(),
+                max_memory_usage_bytes: 5 * 1024 * 1024,
+                send_type: SendType::ReliableUnordered { resend_time: Duration::ZERO }
             }
         }
     }

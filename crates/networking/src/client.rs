@@ -1,15 +1,17 @@
 use std::{net::UdpSocket, time::SystemTime};
 use bevy::prelude::*;
-use bevy_renet::{netcode::*, renet::RenetClient, RenetClientPlugin};
+use bevy_renet::{netcode::*, renet::RenetClient};
 use shared::components::*;
 use bevy_replicon::prelude::*;
 use bevy_replicon_renet::*;
+use shared::resources::LocalPlayerNetId;
+use shared::resources::PendingAssignLocalPlayer;
 use crate::server::ClientConnectMessage;
 
 use super::protocol::*;
 use super::replication::*;
 
-const INTERPOLATION_DELAY: f32 = 1.;
+const INTERPOLATION_DELAY: f32 = 0.2;
 
 pub struct NetClientPlugin;
 
@@ -29,6 +31,7 @@ impl Plugin for NetClientPlugin {
             receive_snapshots_system,
             update_id_map_system,
             interpolate_entities_system,
+            receive_local_player_system,
         ));
 
         app.add_message::<ClientConnectMessage>();
@@ -72,15 +75,16 @@ fn send_input_system(
 
 fn replicate_players_system(
     mut commands: Commands,
+    mut client: ResMut<RenetClient>,
     query: Query<Entity, (Added<Player>, With<Replicated>)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for player in query.iter() {
+    for entity in query.iter() {
         println!("Player replicated to client");
         let mesh = meshes.add(Mesh::from(Capsule3d::default()));
         let material = materials.add(Color::srgb(1., 0., 1.));
-        commands.entity(player).insert((Mesh3d(mesh), MeshMaterial3d(material)));
+        commands.entity(entity).insert((Mesh3d(mesh), MeshMaterial3d(material)));
     }
 }
 
@@ -90,6 +94,7 @@ fn update_id_map_system(
 ) {
     for (entity, net_id) in query.iter() {
         id_map.0.insert(net_id.0, entity);
+        println!("Added entity to id map. id: {:?}, entity: {:?}", net_id.0, entity)
     }
 }
 
@@ -139,8 +144,39 @@ fn interpolate_entities_system(
         // calculate alpha
         let denom = (s2.0 - s1.0).max(f32::EPSILON);
         let a = ((render_time - s1.0) / denom).clamp(0.0, 1.0);
-        println!("Alpha: {}", a);
+        //println!("Alpha: {}", a);
 
         transform.translation = s1.1.lerp(s2.1, a);
     }
 }
+
+fn receive_local_player_system(
+    mut client: ResMut<RenetClient>,
+    mut local_player_net_id: ResMut<LocalPlayerNetId>,
+    mut pending_assign_local_player: ResMut<PendingAssignLocalPlayer>,
+    net_id_map: Res<NetIdMap>,
+    mut commands: Commands,
+) {
+    let config = bincode::config::standard();
+
+    while let Some(message) = client.receive_message(ServerChannel::AssignLocalPlayer) {
+        let (assign_local_player, _): (AssignLocalPlayer, usize) = bincode::serde::decode_from_slice(&message, config).unwrap();
+        println!("got assign local player. net id: {}", assign_local_player.player_net_id);
+        
+        // update local player resources 
+        local_player_net_id.0 = Some(assign_local_player.player_net_id);
+        pending_assign_local_player.0 = Some(assign_local_player);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+

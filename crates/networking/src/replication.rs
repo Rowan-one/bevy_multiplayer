@@ -5,6 +5,7 @@ use bevy_renet::renet::{RenetClient, RenetServer};
 use bevy_replicon::prelude::*;
 use serde::{Serialize, Deserialize};
 
+use shared::messages::*;
 use crate::protocol::ServerChannel;
 
 #[derive(Component, Debug, Clone, Copy, Hash, Serialize, Deserialize)]
@@ -41,21 +42,24 @@ pub struct Snapshot {
 pub fn send_snapshots_system(
     query: Query<(&Transform, &NetId), With<Replicated>>,
     mut server: ResMut<RenetServer>,
+    mut server_tick_message: MessageReader<ServerTickMessage>,
 ) {
-    // create new snapshot
-    let mut snapshot = Snapshot::default();
+    for _message in server_tick_message.read() {
+        // create new snapshot
+        let mut snapshot = Snapshot::default();
 
-    // populate snapshot
-    for (&transform, &id) in query.iter() {
-        let snap = EntitySnap { id, position: transform.translation };
-        snapshot.entities.push(snap);
+        // populate snapshot
+        for (&transform, &id) in query.iter() {
+            let snap = EntitySnap { id, position: transform.translation };
+            snapshot.entities.push(snap);
+        }
+
+        let config = bincode::config::standard();
+        let message = bincode::serde::encode_to_vec(snapshot, config).unwrap();
+
+        // broadcast snapshot to all clients
+        server.broadcast_message(ServerChannel::Replication, message);
     }
-
-    let config = bincode::config::standard();
-    let message = bincode::serde::encode_to_vec(snapshot, config).unwrap();
-
-    // broadcast snapshot to all clients
-    server.broadcast_message(ServerChannel::Replication, message);
 }
 
 pub fn receive_snapshots_system(
@@ -86,7 +90,7 @@ pub fn receive_snapshots_system(
             // trim length of buffer
             while buf.len() > 16 {
                 buf.pop_front();
-            }             
+            }
         }
     }
 }
