@@ -3,20 +3,21 @@ use bevy_replicon::prelude::*;
 use networking::server::*;
 use networking::replication::*;
 use shared::components::*;
+use shared::consts::CLIENT_TICK_RATE;
+use shared::consts::PLAYER_MOVE_SPEED;
+use shared::consts::SERVER_TICK_RATE;
 use shared::messages::*;
 use game::setup_level;
-
-const PLAYER_MOVE_SPEED: f32 = 5.0;
-const PHYSICS_DT: f32 = 1./10.;
+use shared::resources::InputStateMap;
+use shared::resources::PlayerInput;
+use shared::resources::PrevFrameTime;
+use shared::resources::ServerLobby;
+use shared::resources::TickAccumulator;
+use shared::structs::AssignLocalPlayer;
+use shared::structs::InputPayload;
 
 #[derive(Debug, Default, Resource)]
 struct ServerTick(u64);
-
-#[derive(Debug, Default, Resource)]
-struct PhysicsAccumulator(f32);
-
-#[derive(Debug, Default, Resource)]
-struct PrevFrameTime(f32);
 
 fn main() {
     App::new()
@@ -26,15 +27,16 @@ fn main() {
         .add_systems(Startup, (setup_level, setup_simple_camera))
         .add_systems(Update, (
             spawn_players_system,
-            update_player_velocity,
             server_tick_system,
-            integrate_physics_system.before(send_snapshots_system),
+            process_inputs_system.before(networking::replication::send_snapshots_system),
+            //integrate_physics_system.before(send_snapshots_system),
         ))
 
         .insert_resource(ServerLobby::default())
         .insert_resource(ServerTick::default())
-        .insert_resource(PhysicsAccumulator::default())
+        .insert_resource(TickAccumulator::default())
         .insert_resource(PrevFrameTime::default())
+        .insert_resource(InputStateMap::default())
 
         .add_message::<ServerTickMessage>() 
 
@@ -67,9 +69,9 @@ fn spawn_players_system(
                 MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
                 Transform::from_xyz(0., 0.51, 0.),
                 Replicated,
+                OwnedByClient { id: message.client_id },
                 net_id,
             ))
-            .insert(PlayerInput::default())
             .insert(Player {client_id: message.client_id as u64})
             .insert(Velocity(Vec3::ZERO))
             .id();
@@ -85,22 +87,10 @@ fn spawn_players_system(
     }
 }
 
-fn update_player_velocity(
-    mut query: Query<(&mut Velocity, &PlayerInput)>,
-) {
-    for (mut velocity, input) in query.iter_mut() {
-        let x = (input.right as i8 - input.left as i8) as f32;
-        let y = (input.down as i8 - input.up as i8) as f32;
-        let direction = Vec2::new(x, y).normalize_or_zero();
-        velocity.0.x = direction.x * PLAYER_MOVE_SPEED;
-        velocity.0.z = direction.y * PLAYER_MOVE_SPEED;
-    }
-}
-
 fn server_tick_system(
     time: Res<Time>,
     mut prev_frame_time: ResMut<PrevFrameTime>,
-    mut accumulator: ResMut<PhysicsAccumulator>,
+    mut accumulator: ResMut<TickAccumulator>,
     mut server_tick: ResMut<ServerTick>,
     mut tick_message_writer: MessageWriter<ServerTickMessage>,
 ) {
@@ -111,22 +101,76 @@ fn server_tick_system(
     // increment accumulator by frame time
     accumulator.0 += frame_time;
 
-    while accumulator.0 >= PHYSICS_DT {
+    while accumulator.0 >= SERVER_TICK_RATE {
         // send tick message
-        tick_message_writer.write(ServerTickMessage(server_tick.0));
+        tick_message_writer.write(ServerTickMessage{
+            tick: server_tick.0,
+            timestamp: current_time,
+        });
 
-        accumulator.0 -= PHYSICS_DT;
+        accumulator.0 -= SERVER_TICK_RATE;
         server_tick.0 += 1;
     }
 }
 
-fn integrate_physics_system(
-    mut query: Query<(&Velocity, &mut Transform)>, 
-    mut server_tick_message: MessageReader<ServerTickMessage>,
+fn update_player_velocity(
+    velocity: &mut Velocity,
+    input: &PlayerInput,
 ) {
-    for message in server_tick_message.read() {
-        for (velocity, mut transform) in query.iter_mut() {
-            transform.translation += velocity.0 * PHYSICS_DT;
+    let x = (input.right as i8 - input.left as i8) as f32;
+    let y = (input.down as i8 - input.up as i8) as f32;
+    let direction = Vec2::new(x, y).normalize_or_zero();
+    velocity.0.x = direction.x * PLAYER_MOVE_SPEED;
+    velocity.0.z = direction.y * PLAYER_MOVE_SPEED;
+}
+
+fn process_inputs_system(
+    time: Res<Time>,
+    mut input_state_map: ResMut<InputStateMap>,
+    server_lobby: Res<ServerLobby>,
+    mut server_tick_message: MessageReader<ServerTickMessage>,
+    mut query: Query<(&mut Transform, &mut Velocity)>
+) {
+    for tick in server_tick_message.read() {
+        for (client_id, input_state) in input_state_map.0.iter_mut() {
+            println!("Processing inputs for client {}", client_id);
+            // get player entity else return
+            let Some(player_entity) = server_lobby.players.get(client_id) else { continue; };
+
+            // get all inputs to apply in order
+            let mut inputs_to_apply: Vec<InputPayload> = input_state
+                .buffer
+                .iter()
+                .filter(|p| p.seq > input_state.last_processed_input.seq)
+                .cloned()
+                .collect();
+
+            inputs_to_apply.sort_by_key(|p| p.seq);
+
+            // make sure there are inputs to apply
+            if inputs_to_apply.is_empty() { continue; }
+            
+            let (mut transform, mut velocity) = query.get_mut(*player_entity).unwrap();
+            println!("n inputs to apply: {:?}",inputs_to_apply.len());
+            for i in 0..inputs_to_apply.len() {
+                let payload = inputs_to_apply[i];
+
+                update_player_velocity(&mut velocity, &payload.input);
+                integrate(&mut transform, &mut velocity, CLIENT_TICK_RATE);
+
+                input_state.last_processed_input = payload;
+            }
+            
+            // clear buffer of all inputs already consumed
+            input_state.buffer.retain(|p| p.seq > input_state.last_processed_input.seq);
         }
     }
+}
+
+fn integrate(
+    transform: &mut Transform,
+    velocity: &mut Velocity,
+    dt: f32,
+) {
+    transform.translation += velocity.0 * dt;
 }

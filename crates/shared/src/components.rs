@@ -9,28 +9,11 @@ pub struct Player {
 }
 
 // local player marker component
-#[derive(Debug, Component)]
+#[derive(Debug, Default, Clone, Copy, Component)]
 pub struct LocalPlayer;
 
-#[derive(Debug, Default, Resource)]
-pub struct ServerLobby {
-    pub players: HashMap<u64, Entity>
-}
 
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Component, Resource)]
-pub struct PlayerInput {
-    pub up: bool,
-    pub down: bool,
-    pub left: bool,
-    pub right: bool,
-}
-
-#[derive(Debug, Default, Component)]
+#[derive(Debug, Default, Serialize, Deserialize, Component)]
 pub struct Velocity(pub Vec3);
 
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
-pub struct AssignLocalPlayer {
-    pub client_id: u64,
-    pub player_net_id: u64,
-}

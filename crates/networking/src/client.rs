@@ -4,8 +4,14 @@ use bevy_renet::{netcode::*, renet::RenetClient};
 use shared::components::*;
 use bevy_replicon::prelude::*;
 use bevy_replicon_renet::*;
+use shared::resources::ClientInputBuffer;
+use shared::resources::InputSequence;
 use shared::resources::LocalPlayerNetId;
 use shared::resources::PendingAssignLocalPlayer;
+use shared::resources::PlayerInput;
+use shared::structs::AssignLocalPlayer;
+use shared::structs::EntitySnap;
+use shared::structs::InputPayload;
 use crate::server::ClientConnectMessage;
 
 use super::protocol::*;
@@ -23,6 +29,7 @@ impl Plugin for NetClientPlugin {
 
         app.replicate::<Player>();
         app.replicate::<NetId>();
+        app.replicate::<Velocity>();
 
         app.add_systems(Startup, setup_renet_client);
         app.add_systems(Update, (
@@ -35,6 +42,7 @@ impl Plugin for NetClientPlugin {
         ));
 
         app.add_message::<ClientConnectMessage>();
+        app.add_message::<SnapshotReceiveMessage>();
 
         app.insert_resource(NetIdMap::default());
         app.insert_resource(SnapshotBuffer::default());
@@ -64,14 +72,31 @@ fn setup_renet_client(
 }
 
 fn send_input_system(
+    time: Res<Time>,
     mut client: ResMut<RenetClient>,
-    input: Res<PlayerInput>,
+    mut input_sequence: ResMut<InputSequence>,
+    player_input: Res<PlayerInput>,
+    mut client_input_buffer: ResMut<ClientInputBuffer>,
 ) {
+    // only send input if it is different from doing nothing
+    // if player_input.clone() == PlayerInput::default() { return; }
+
+    // create input payload from resource
+    let input = InputPayload {
+        seq: input_sequence.next(),
+        input: player_input.clone(),
+        timestamp: time.elapsed_secs(),
+        dt: time.delta_secs(),
+    };
+
+    // add input to local buffer
+    client_input_buffer.0.push(input);
+
+    // send input to server
     let config = bincode::config::standard();
-    let bytes = bincode::serde::encode_to_vec(&*input, config).unwrap();
+    let bytes = bincode::serde::encode_to_vec(input, config).unwrap();
     client.send_message(ClientChannel::Input, bytes);
 }
-
 
 fn replicate_players_system(
     mut commands: Commands,
@@ -102,12 +127,18 @@ fn interpolate_entities_system(
     time: Res<Time>,
     snapshot_buffer: ResMut<SnapshotBuffer>,
     id_map: ResMut<NetIdMap>,
+    local_player_net_id: ResMut<LocalPlayerNetId>,
     mut transforms: Query<&mut Transform>,
 ) {
     let render_time = time.elapsed_secs() - INTERPOLATION_DELAY;
 
     // iterate through all entitys' buffers
     for (net_id, deque) in snapshot_buffer.0.iter() {
+        // dont interpolate local player, that will be left to client prediction
+        if let Some(local_player_id) = &local_player_net_id.0 {
+            if net_id == local_player_id { continue; }
+        }
+
         // make sure we have at least 2 samples
         if deque.len() < 2 { continue; }
 
@@ -115,30 +146,21 @@ fn interpolate_entities_system(
         let Some(&entity) = id_map.0.get(net_id) else { continue; };
         let Ok(mut transform) = transforms.get_mut(entity) else { continue; };
 
-        let samples: Vec<(f32, Vec3)> = deque.iter().copied().collect();
+        let samples: Vec<EntitySnap> = deque.iter().copied().collect();
 
         // find window bracketing render time
         let mut found = false;
         let mut s1: (f32, Vec3) = (0., Vec3::ZERO);
         let mut s2: (f32, Vec3) = (0., Vec3::ZERO);
         for window in samples.windows(2) {
-            let (t0, p0) = window[0];
-            let (t1, p1) = window[1];
+            let (t0, p0) = (window[0].timestamp, window[0].position);
+            let (t1, p1) = (window[1].timestamp, window[1].position);
             if t0 <= render_time && t1 >= render_time {
                 s1 = (t0, p0);
                 s2 = (t1, p1);
                 found = true;
                 break;
             }
-        }
-
-        if found == false {
-            println!(
-                "brackets: {:?}, {:?}, render: {}",
-                samples.get(samples.len()-2).map(|(t, _)| *t), // -> Option<f32>
-                samples.get(samples.len()-1).map(|(t, _)| *t),
-                render_time
-            );
         }
 
         // calculate alpha

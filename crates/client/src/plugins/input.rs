@@ -1,10 +1,12 @@
 use bevy::prelude::*;
-use shared::components::PlayerInput;
+use shared::resources::{ClientInputBuffer, InputSequence, PlayerInput};
 
 pub struct ClientInputPlugin;
 impl Plugin for ClientInputPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(PlayerInput::default());
+        app.init_resource::<PlayerInput>();
+        app.init_resource::<InputSequence>();
+        app.init_resource::<ClientInputBuffer>();
         app.add_systems(Update, update_player_input);
     }
 }

@@ -1,7 +1,7 @@
 use std::{net::UdpSocket, time::SystemTime};
 use bevy::prelude::*;
 use bevy_renet::{netcode::*, renet::{ClientId, *}};
-use shared::{components::*, messages::AssignLocalPlayerMessage};
+use shared::{components::*, messages::AssignLocalPlayerMessage, resources::InputStateMap, structs::InputPayload};
 use bevy_replicon::prelude::*;
 use bevy_replicon_renet::*;
 use super::protocol::*;
@@ -11,6 +11,9 @@ use super::replication::*;
 pub struct ClientConnectMessage {
     pub client_id: ClientId,
 }
+
+#[derive(Debug, Default, Clone, Copy, Component)]
+pub struct OwnedByClient { pub id: u64 }
 
 pub struct NetServerPlugin;
 
@@ -22,6 +25,7 @@ impl Plugin for NetServerPlugin {
 
         app.replicate::<Player>();
         app.replicate::<NetId>();
+        app.replicate::<Velocity>();
 
         app.add_systems(Startup, setup_renet_server);
         app.add_systems(Update, (
@@ -79,17 +83,16 @@ fn handle_events_system(
 
 fn receive_input_system(
     mut server: ResMut<RenetServer>,
-    lobby: ResMut<ServerLobby>,
-    mut commands: Commands,
+    mut input_state_map: ResMut<InputStateMap>,
 ) {
     let config = bincode::config::standard();
 
     for client_id in server.clients_id() {
         while let Some(message) = server.receive_message(client_id, ClientChannel::Input) {
-            let (input, _): (PlayerInput, usize) = bincode::serde::decode_from_slice(&message, config).unwrap();
-            if let Some(player_entity) = lobby.players.get(&client_id) {
-                commands.entity(*player_entity).insert(input);
-            }
+            let (input, _): (InputPayload, usize) = bincode::serde::decode_from_slice(&message, config).unwrap();
+
+            // append new input to client's input buffer
+            input_state_map.0.entry(client_id).or_default().buffer.push(input);
         }
     }
 }

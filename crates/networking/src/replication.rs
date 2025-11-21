@@ -5,8 +5,8 @@ use bevy_renet::renet::{RenetClient, RenetServer};
 use bevy_replicon::prelude::*;
 use serde::{Serialize, Deserialize};
 
-use shared::messages::*;
-use crate::protocol::ServerChannel;
+use shared::{messages::*, resources::InputStateMap, structs::EntitySnap};
+use crate::{protocol::ServerChannel, server::OwnedByClient};
 
 #[derive(Component, Debug, Clone, Copy, Hash, Serialize, Deserialize)]
 pub struct NetId(pub u64);
@@ -25,13 +25,10 @@ impl NetIdGen {
 pub struct NetIdMap(pub HashMap<u64, Entity>);
 
 #[derive(Debug, Default, Resource)]
-pub struct SnapshotBuffer(pub HashMap<u64, VecDeque<(f32, Vec3)>>);
-    
-#[derive(Debug, Serialize, Deserialize)]
-pub struct EntitySnap {
-    pub id: NetId,
-    pub position: Vec3
-}
+pub struct SnapshotBuffer(pub HashMap<u64, VecDeque<EntitySnap>>);
+
+#[derive(Debug, Default, Message)]
+pub struct SnapshotReceiveMessage();
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Snapshot {
@@ -40,18 +37,31 @@ pub struct Snapshot {
 }
 
 pub fn send_snapshots_system(
-    query: Query<(&Transform, &NetId), With<Replicated>>,
+    time: Res<Time>,
+    query: Query<(&Transform, &NetId, &OwnedByClient), With<Replicated>>,
+    input_state_map: Res<InputStateMap>,
     mut server: ResMut<RenetServer>,
     mut server_tick_message: MessageReader<ServerTickMessage>,
 ) {
-    for _message in server_tick_message.read() {
+    for message in server_tick_message.read() {
         // create new snapshot
         let mut snapshot = Snapshot::default();
 
         // populate snapshot
-        for (&transform, &id) in query.iter() {
-            let snap = EntitySnap { id, position: transform.translation };
-            snapshot.entities.push(snap);
+        for (&transform, &id, &client) in query.iter() {
+
+            // get client's input state
+            if let Some(input_state) = input_state_map.0.get(&client.id) {
+
+                let snap = EntitySnap {
+                    net_id: id.0,
+                    position: transform.translation,
+                    last_processed_seq: input_state.last_processed_input.seq,
+                    timestamp: time.elapsed_secs(),
+                };
+
+                snapshot.entities.push(snap);
+            }
         }
 
         let config = bincode::config::standard();
@@ -66,6 +76,7 @@ pub fn receive_snapshots_system(
     time: Res<Time>,
     mut client: ResMut<RenetClient>,
     mut snapshot_buffer: ResMut<SnapshotBuffer>,
+    mut snapshot_receive_message: MessageWriter<SnapshotReceiveMessage>,
 ) {
     while let Some(message) = client.receive_message(ServerChannel::Replication) {
         // decode message
@@ -78,19 +89,25 @@ pub fn receive_snapshots_system(
 
             // get existing entity buffer or create new one
             let buf = snapshot_buffer.0
-                .entry(entity_snap.id.0)
+                .entry(entity_snap.net_id)
                 .or_default();
 
             // append new snap to back of queue
-            buf.push_back((
-                elapsed_time,
-                entity_snap.position,
-            ));
+            buf.push_back(EntitySnap {
+                net_id: entity_snap.net_id,
+                timestamp: elapsed_time, // NOTE: used elapsed time from this function before using
+                                         // EntitySnap, might want to use entity_snap.timestamp
+                position: entity_snap.position,
+                last_processed_seq: entity_snap.last_processed_seq,
+            });
 
             // trim length of buffer
             while buf.len() > 16 {
                 buf.pop_front();
             }
+
+            // send snapshot receive message
+            snapshot_receive_message.write(SnapshotReceiveMessage::default());
         }
     }
 }
