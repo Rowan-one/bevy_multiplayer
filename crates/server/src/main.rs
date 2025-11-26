@@ -6,10 +6,11 @@ use shared::components::*;
 use shared::consts::CLIENT_TICK_RATE;
 use shared::consts::PLAYER_MOVE_SPEED;
 use shared::consts::SERVER_TICK_RATE;
+use shared::functions::integrate;
+use shared::functions::update_player_velocity;
 use shared::messages::*;
 use game::setup_level;
 use shared::resources::InputStateMap;
-use shared::resources::PlayerInput;
 use shared::resources::PrevFrameTime;
 use shared::resources::ServerLobby;
 use shared::resources::TickAccumulator;
@@ -29,7 +30,7 @@ fn main() {
             spawn_players_system,
             server_tick_system,
             process_inputs_system.before(networking::replication::send_snapshots_system),
-            //integrate_physics_system.before(send_snapshots_system),
+            sync_positions_system.after(process_inputs_system),
         ))
 
         .insert_resource(ServerLobby::default())
@@ -67,13 +68,14 @@ fn spawn_players_system(
             .spawn((
                 Mesh3d(meshes.add(Mesh::from(Capsule3d::default()))),
                 MeshMaterial3d(materials.add(Color::srgb(0.8, 0.7, 0.6))),
-                Transform::from_xyz(0., 0.51, 0.),
+                Transform::default(),
                 Replicated,
                 OwnedByClient { id: message.client_id },
                 net_id,
             ))
             .insert(Player {client_id: message.client_id as u64})
             .insert(Velocity(Vec3::ZERO))
+            .insert(Position(Vec3::new(0., 0.51, 0.)))
             .id();
 
         // add player to lobby
@@ -113,23 +115,12 @@ fn server_tick_system(
     }
 }
 
-fn update_player_velocity(
-    velocity: &mut Velocity,
-    input: &PlayerInput,
-) {
-    let x = (input.right as i8 - input.left as i8) as f32;
-    let y = (input.down as i8 - input.up as i8) as f32;
-    let direction = Vec2::new(x, y).normalize_or_zero();
-    velocity.0.x = direction.x * PLAYER_MOVE_SPEED;
-    velocity.0.z = direction.y * PLAYER_MOVE_SPEED;
-}
-
 fn process_inputs_system(
     time: Res<Time>,
     mut input_state_map: ResMut<InputStateMap>,
     server_lobby: Res<ServerLobby>,
     mut server_tick_message: MessageReader<ServerTickMessage>,
-    mut query: Query<(&mut Transform, &mut Velocity)>
+    mut query: Query<(&mut Position, &mut Velocity)>
 ) {
     for tick in server_tick_message.read() {
         for (client_id, input_state) in input_state_map.0.iter_mut() {
@@ -150,13 +141,13 @@ fn process_inputs_system(
             // make sure there are inputs to apply
             if inputs_to_apply.is_empty() { continue; }
             
-            let (mut transform, mut velocity) = query.get_mut(*player_entity).unwrap();
+            let (mut position, mut velocity) = query.get_mut(*player_entity).unwrap();
             println!("n inputs to apply: {:?}",inputs_to_apply.len());
             for i in 0..inputs_to_apply.len() {
                 let payload = inputs_to_apply[i];
 
                 update_player_velocity(&mut velocity, &payload.input);
-                integrate(&mut transform, &mut velocity, CLIENT_TICK_RATE);
+                integrate(&mut position, &mut velocity, CLIENT_TICK_RATE);
 
                 input_state.last_processed_input = payload;
             }
@@ -167,10 +158,10 @@ fn process_inputs_system(
     }
 }
 
-fn integrate(
-    transform: &mut Transform,
-    velocity: &mut Velocity,
-    dt: f32,
+pub fn sync_positions_system(
+    mut query: Query<(&mut Transform, &Position)>
 ) {
-    transform.translation += velocity.0 * dt;
+    for (mut transform, position) in query.iter_mut() {
+        transform.translation = position.0;
+    }
 }

@@ -16,4 +16,5 @@ pub struct LocalPlayer;
 #[derive(Debug, Default, Serialize, Deserialize, Component)]
 pub struct Velocity(pub Vec3);
 
-
+#[derive(Debug, Default, Serialize, Deserialize, Component)]
+pub struct Position(pub Vec3);

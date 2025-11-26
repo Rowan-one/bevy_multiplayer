@@ -108,7 +108,7 @@ fn replicate_players_system(
         println!("Player replicated to client");
         let mesh = meshes.add(Mesh::from(Capsule3d::default()));
         let material = materials.add(Color::srgb(1., 0., 1.));
-        commands.entity(entity).insert((Mesh3d(mesh), MeshMaterial3d(material)));
+        commands.entity(entity).insert((Mesh3d(mesh), MeshMaterial3d(material), Position(Vec3::new(0., 0.51, 0.))));
     }
 }
 
