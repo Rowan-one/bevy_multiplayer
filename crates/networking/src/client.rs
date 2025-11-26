@@ -86,7 +86,6 @@ fn send_input_system(
         seq: input_sequence.next(),
         input: player_input.clone(),
         timestamp: time.elapsed_secs(),
-        dt: time.delta_secs(),
     };
 
     // add input to local buffer
@@ -158,7 +157,6 @@ fn interpolate_entities_system(
             if t0 <= render_time && t1 >= render_time {
                 s1 = (t0, p0);
                 s2 = (t1, p1);
-                found = true;
                 break;
             }
         }
