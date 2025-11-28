@@ -26,6 +26,7 @@ impl Plugin for NetServerPlugin {
         app.replicate::<Player>();
         app.replicate::<NetId>();
         app.replicate::<Velocity>();
+        app.replicate::<RestingHeight>();
 
         app.add_systems(Startup, setup_renet_server);
         app.add_systems(Update, (

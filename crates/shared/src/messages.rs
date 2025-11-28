@@ -10,3 +10,9 @@ pub struct ServerTickMessage {
     pub tick: u64,
     pub timestamp: f32,
 }
+
+#[derive(Debug, Default, Message)]
+pub struct ClientTickMessage {
+    pub tick: u64,
+    pub timestamp: f32,
+}

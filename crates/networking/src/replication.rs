@@ -5,7 +5,7 @@ use bevy_renet::renet::{RenetClient, RenetServer};
 use bevy_replicon::prelude::*;
 use serde::{Serialize, Deserialize};
 
-use shared::{messages::*, resources::InputStateMap, structs::EntitySnap};
+use shared::{components::Velocity, consts::TICKS_PER_SNAPSHOT, messages::*, resources::InputStateMap, structs::EntitySnap};
 use crate::{protocol::ServerChannel, server::OwnedByClient};
 
 #[derive(Component, Debug, Clone, Copy, Hash, Serialize, Deserialize)]
@@ -38,17 +38,20 @@ pub struct Snapshot {
 
 pub fn send_snapshots_system(
     time: Res<Time>,
-    query: Query<(&Transform, &NetId, &OwnedByClient), With<Replicated>>,
+    query: Query<(&Transform, &Velocity, &NetId, &OwnedByClient), With<Replicated>>,
     input_state_map: Res<InputStateMap>,
     mut server: ResMut<RenetServer>,
     mut server_tick_message: MessageReader<ServerTickMessage>,
 ) {
-    for message in server_tick_message.read() {
+    for tick in server_tick_message.read() {
+        // only send snapshots every nth tick
+        if tick.tick % TICKS_PER_SNAPSHOT as u64 != 0 { continue; }
+
         // create new snapshot
         let mut snapshot = Snapshot::default();
 
         // populate snapshot
-        for (&transform, &id, &client) in query.iter() {
+        for (&transform, velocity, &id, &client) in query.iter() {
 
             // get client's input state
             if let Some(input_state) = input_state_map.0.get(&client.id) {
@@ -56,6 +59,7 @@ pub fn send_snapshots_system(
                 let snap = EntitySnap {
                     net_id: id.0,
                     position: transform.translation,
+                    velocity: velocity.0,
                     last_processed_seq: input_state.last_processed_input.seq,
                     timestamp: time.elapsed_secs(),
                 };
@@ -79,6 +83,7 @@ pub fn receive_snapshots_system(
     mut snapshot_receive_message: MessageWriter<SnapshotReceiveMessage>,
 ) {
     while let Some(message) = client.receive_message(ServerChannel::Replication) {
+        println!("received snapshot");
         // decode message
         let config = bincode::config::standard();
         let (snapshot, _): (Snapshot, usize) = bincode::serde::decode_from_slice(&message, config).unwrap();
@@ -98,6 +103,7 @@ pub fn receive_snapshots_system(
                 timestamp: elapsed_time, // NOTE: used elapsed time from this function before using
                                          // EntitySnap, might want to use entity_snap.timestamp
                 position: entity_snap.position,
+                velocity: entity_snap.velocity,
                 last_processed_seq: entity_snap.last_processed_seq,
             });
 

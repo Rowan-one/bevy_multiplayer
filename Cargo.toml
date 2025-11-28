@@ -12,22 +12,14 @@ resolver = "2"
 edition = "2024"
 
 [workspace.dependencies]
-bevy = "0.17.2"
-bevy_ecs = "0.17.2"
+bevy = "0.17.3"
+bevy_ecs = "0.17.3"
 bevy_replicon = "0.36"
 bevy_replicon_renet = "0.12"
 bevy_renet = "3.0.0"
-bevy_rapier3d = "0.31.0"
+bevy_rapier3d = "0.32.0"
+glam = "0.30.9"
 
 bincode = { version = "2.0.1", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
-glam = "0.30.8"
 
-# bevy_egui = "0.37"
-# renet_visualizer = {version = "1", features = ["bevy"]}
-# bincode = { version = "2.0.1", features = ["serde"] }
-# local-ip-address = "0.6.5"
-
-# # for port forwarded servers
-# public-ip = "0.2.2"
-# tokio = {version = "1.47.1", features = ["full"]}

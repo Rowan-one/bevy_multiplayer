@@ -13,8 +13,15 @@ pub struct Player {
 pub struct LocalPlayer;
 
 
-#[derive(Debug, Default, Serialize, Deserialize, Component)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Component)]
 pub struct Velocity(pub Vec3);
 
-#[derive(Debug, Default, Serialize, Deserialize, Component)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Component)]
 pub struct Position(pub Vec3);
+
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Component)]
+pub struct Grounded(pub bool);
+
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Component)]
+pub struct RestingHeight(pub f32); // used with grounded component to determine ground check
+                                   // distance

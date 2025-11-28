@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::structs::{AssignLocalPlayer, ClientInputState, InputPayload};
+use crate::{enums::PlayerActionType, structs::{AssignLocalPlayer, ClientInputState, InputPayload}};
 
 #[derive(Debug, Default, Serialize, Deserialize, Resource)]
 pub struct ClientInputBuffer(pub Vec<InputPayload>);
@@ -23,13 +23,16 @@ pub struct LocalPlayerNetId(pub Option<u64>);
 #[derive(Debug, Default, Resource)]
 pub struct PendingAssignLocalPlayer(pub Option<AssignLocalPlayer>);
 
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Resource)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Resource)]
 pub struct PlayerInput{
-    pub right: bool,
-    pub left: bool,
+    pub seq: u64,
+
     pub up: bool,
     pub down: bool,
-    pub seq: u64,
+    pub left: bool,
+    pub right: bool,
+
+    pub jump: bool,
 }
 
 #[derive(Debug, Default, Resource)]

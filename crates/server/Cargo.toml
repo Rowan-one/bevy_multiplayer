@@ -7,6 +7,7 @@ edition = "2024"
 bevy = { workspace = true }
 bevy_replicon = { workspace = true }
 bevy_rapier3d = { workspace = true }
+glam = { workspace = true }
 
 shared = { path = "../shared" }
 networking = { path = "../networking" }

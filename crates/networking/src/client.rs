@@ -4,14 +4,9 @@ use bevy_renet::{netcode::*, renet::RenetClient};
 use shared::components::*;
 use bevy_replicon::prelude::*;
 use bevy_replicon_renet::*;
-use shared::resources::ClientInputBuffer;
-use shared::resources::InputSequence;
-use shared::resources::LocalPlayerNetId;
-use shared::resources::PendingAssignLocalPlayer;
-use shared::resources::PlayerInput;
-use shared::structs::AssignLocalPlayer;
-use shared::structs::EntitySnap;
-use shared::structs::InputPayload;
+use shared::messages::ClientTickMessage;
+use shared::resources::*;
+use shared::structs::*;
 use crate::server::ClientConnectMessage;
 
 use super::protocol::*;
@@ -30,6 +25,7 @@ impl Plugin for NetClientPlugin {
         app.replicate::<Player>();
         app.replicate::<NetId>();
         app.replicate::<Velocity>();
+        app.replicate::<RestingHeight>();
 
         app.add_systems(Startup, setup_renet_client);
         app.add_systems(Update, (
@@ -75,26 +71,29 @@ fn send_input_system(
     time: Res<Time>,
     mut client: ResMut<RenetClient>,
     mut input_sequence: ResMut<InputSequence>,
-    player_input: Res<PlayerInput>,
+    mut player_input: ResMut<PlayerInput>,
     mut client_input_buffer: ResMut<ClientInputBuffer>,
+    mut client_tick_message: MessageReader<ClientTickMessage>,
 ) {
-    // only send input if it is different from doing nothing
-    // if player_input.clone() == PlayerInput::default() { return; }
+    for message in client_tick_message.read() {
+        // only send input if it is different from doing nothing
+        // if player_input.clone() == PlayerInput::default() { return; }
 
-    // create input payload from resource
-    let input = InputPayload {
-        seq: input_sequence.next(),
-        input: player_input.clone(),
-        timestamp: time.elapsed_secs(),
-    };
+        // create input payload from resource
+        let input = InputPayload {
+            seq: input_sequence.next(),
+            input: player_input.clone(),
+            timestamp: time.elapsed_secs(),
+        };
 
-    // add input to local buffer
-    client_input_buffer.0.push(input);
+        // add input to local buffer
+        client_input_buffer.0.push(input.clone());
 
-    // send input to server
-    let config = bincode::config::standard();
-    let bytes = bincode::serde::encode_to_vec(input, config).unwrap();
-    client.send_message(ClientChannel::Input, bytes);
+        // send input to server
+        let config = bincode::config::standard();
+        let bytes = bincode::serde::encode_to_vec(input, config).unwrap();
+        client.send_message(ClientChannel::Input, bytes);
+    }
 }
 
 fn replicate_players_system(
@@ -108,7 +107,12 @@ fn replicate_players_system(
         println!("Player replicated to client");
         let mesh = meshes.add(Mesh::from(Capsule3d::default()));
         let material = materials.add(Color::srgb(1., 0., 1.));
-        commands.entity(entity).insert((Mesh3d(mesh), MeshMaterial3d(material), Position(Vec3::new(0., 0.51, 0.))));
+        commands.entity(entity).insert((
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            Position(Vec3::new(0., 0.51, 0.)),
+            Grounded(true),
+        ));
     }
 }
 
