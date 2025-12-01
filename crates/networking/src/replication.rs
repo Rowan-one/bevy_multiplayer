@@ -3,9 +3,10 @@ use std::collections::{HashMap, VecDeque};
 use bevy::prelude::*;
 use bevy_renet::renet::{RenetClient, RenetServer};
 use bevy_replicon::prelude::*;
+use avian3d::prelude::*;
 use serde::{Serialize, Deserialize};
 
-use shared::{components::Velocity, consts::TICKS_PER_SNAPSHOT, messages::*, resources::InputStateMap, structs::EntitySnap};
+use shared::{consts::TICKS_PER_SNAPSHOT, messages::*, resources::InputStateMap, structs::EntitySnap};
 use crate::{protocol::ServerChannel, server::OwnedByClient};
 
 #[derive(Component, Debug, Clone, Copy, Hash, Serialize, Deserialize)]
@@ -38,7 +39,7 @@ pub struct Snapshot {
 
 pub fn send_snapshots_system(
     time: Res<Time>,
-    query: Query<(&Transform, &Velocity, &NetId, &OwnedByClient), With<Replicated>>,
+    query: Query<(&Transform, &LinearVelocity, &NetId, &OwnedByClient), With<Replicated>>,
     input_state_map: Res<InputStateMap>,
     mut server: ResMut<RenetServer>,
     mut server_tick_message: MessageReader<ServerTickMessage>,
@@ -83,7 +84,6 @@ pub fn receive_snapshots_system(
     mut snapshot_receive_message: MessageWriter<SnapshotReceiveMessage>,
 ) {
     while let Some(message) = client.receive_message(ServerChannel::Replication) {
-        println!("received snapshot");
         // decode message
         let config = bincode::config::standard();
         let (snapshot, _): (Snapshot, usize) = bincode::serde::decode_from_slice(&message, config).unwrap();

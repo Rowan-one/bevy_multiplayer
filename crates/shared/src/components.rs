@@ -12,13 +12,6 @@ pub struct Player {
 #[derive(Debug, Default, Clone, Copy, Component)]
 pub struct LocalPlayer;
 
-
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Component)]
-pub struct Velocity(pub Vec3);
-
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Component)]
-pub struct Position(pub Vec3);
-
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Component)]
 pub struct Grounded(pub bool);
 

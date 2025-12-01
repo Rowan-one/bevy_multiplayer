@@ -1,46 +1,31 @@
+use avian3d::prelude::*;
 use bevy::prelude::*;
-use bevy_rapier3d::plugin::NoUserData;
-use bevy_rapier3d::plugin::RapierPhysicsPlugin;
-use bevy_rapier3d::render::RapierDebugRenderPlugin;
 use glam::Vec3;
 use networking::server::*;
-use server::physics::ground_check_system;
-use server::physics::sync_positions_system;
-use server::player::process_inputs_system;
-use server::player::spawn_players_system;
+use server::physics::ServerPhysicsPlugin;
+use server::player::ServerPlayerPlugin;
 use shared::{consts::*, messages::*, resources::*};
 use game::setup_level;
 
 #[derive(Debug, Default, Resource)]
-struct ServerTick(u64);
+pub struct ServerTick(u64);
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(NetServerPlugin)
-        .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
-        .add_plugins(RapierDebugRenderPlugin::default())
+        .add_plugins(ServerPlayerPlugin)
+        .add_plugins(ServerPhysicsPlugin)
 
         .add_systems(Startup, (setup_level, setup_simple_camera))
         .add_systems(Update, (
-            spawn_players_system,
             server_tick_system,
-            process_inputs_system
-                .after(server_tick_system)
-                .before(networking::replication::send_snapshots_system),
-            ground_check_system
-                .after(process_inputs_system)
-                .before(networking::replication::send_snapshots_system),
-            sync_positions_system
-                .after(process_inputs_system)
-                .after(ground_check_system)
         ))
 
         .insert_resource(ServerLobby::default())
         .insert_resource(ServerTick::default())
         .insert_resource(TickAccumulator::default())
         .insert_resource(PrevFrameTime::default())
-        .insert_resource(InputStateMap::default())
 
         .add_message::<ServerTickMessage>() 
 
@@ -55,7 +40,7 @@ pub fn setup_simple_camera(mut commands: Commands) {
     ));
 }
 
-fn server_tick_system(
+pub fn server_tick_system(
     time: Res<Time>,
     mut prev_frame_time: ResMut<PrevFrameTime>,
     mut accumulator: ResMut<TickAccumulator>,

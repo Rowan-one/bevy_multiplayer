@@ -1,8 +1,7 @@
-use bevy_ecs::prelude::*;
 use glam::Vec3;
 use serde::{Serialize, Deserialize};
-
-use crate::{components::{Grounded, Player, Position, Velocity}, resources::{ClientInputBuffer, PlayerInput}};
+use avian3d::prelude::{Position, LinearVelocity};
+use crate::{components::{Grounded, Player}, resources::{ClientInputBuffer, PlayerInput}};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct AssignLocalPlayer {
@@ -36,7 +35,7 @@ pub struct ClientInputState {
 #[derive(Debug, Default)]
 pub struct PlayerState {
     pub position: Position,
-    pub velocity: Velocity,
+    pub velocity: LinearVelocity,
     pub grounded: Grounded,
     pub input: PlayerInput,
 }

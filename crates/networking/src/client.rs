@@ -1,4 +1,9 @@
 use std::{net::UdpSocket, time::SystemTime};
+use avian3d::prelude::Collider;
+use avian3d::prelude::LinearVelocity;
+use avian3d::prelude::Position;
+use avian3d::prelude::RigidBody;
+use avian3d::prelude::TransformInterpolation;
 use bevy::prelude::*;
 use bevy_renet::{netcode::*, renet::RenetClient};
 use shared::components::*;
@@ -24,7 +29,6 @@ impl Plugin for NetClientPlugin {
 
         app.replicate::<Player>();
         app.replicate::<NetId>();
-        app.replicate::<Velocity>();
         app.replicate::<RestingHeight>();
 
         app.add_systems(Startup, setup_renet_client);
@@ -111,7 +115,11 @@ fn replicate_players_system(
             Mesh3d(mesh),
             MeshMaterial3d(material),
             Position(Vec3::new(0., 0.51, 0.)),
+            LinearVelocity::default(),
+            Collider::sphere(1.0),
+            RigidBody::Kinematic,
             Grounded(true),
+            TransformInterpolation,
         ));
     }
 }

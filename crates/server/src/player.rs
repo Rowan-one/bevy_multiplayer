@@ -1,7 +1,20 @@
+use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy_replicon::prelude::*;
 use networking::{replication::NetIdGen, server::{ClientConnectMessage, OwnedByClient}};
 use shared::{components::*, consts::CLIENT_TICK_RATE, functions::simulate_player, messages::{AssignLocalPlayerMessage, ServerTickMessage}, resources::*, structs::{AssignLocalPlayer, InputPayload}};
+
+pub struct ServerPlayerPlugin;
+impl Plugin for ServerPlayerPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<InputStateMap>();
+        app.add_systems(Update, (
+            spawn_players_system,
+            process_inputs_system
+                .before(networking::replication::send_snapshots_system),
+        ));
+    }
+}
 
 pub fn spawn_players_system(
     mut connect_message: MessageReader<ClientConnectMessage>,
@@ -24,11 +37,14 @@ pub fn spawn_players_system(
                 OwnedByClient { id: message.client_id },
                 net_id,
             ))
+            .insert(Collider::sphere(1.))
+            .insert(RigidBody::Kinematic)
             .insert(Player {client_id: message.client_id as u64})
-            .insert(Velocity(Vec3::ZERO))
+            .insert(LinearVelocity(Vec3::ZERO))
             .insert(Position(Vec3::new(0., 4.0, 0.)))
             .insert(Grounded(true))
             .insert(RestingHeight(2.0))
+            .insert(TransformInterpolation)
             .id();
 
         // add player to lobby
@@ -46,7 +62,7 @@ pub fn process_inputs_system(
     mut input_state_map: ResMut<InputStateMap>,
     server_lobby: Res<ServerLobby>,
     mut server_tick_message: MessageReader<ServerTickMessage>,
-    mut query: Query<(&mut Position, &mut shared::components::Velocity, &mut Grounded)>
+    mut query: Query<(&mut Position, &mut LinearVelocity, &mut Grounded)>
 ) {
     for _tick in server_tick_message.read() {
         for (client_id, input_state) in input_state_map.0.iter_mut() {
@@ -71,6 +87,7 @@ pub fn process_inputs_system(
                 let payload = &inputs_to_apply[i];
                 simulate_player(&mut position, &mut velocity, &mut grounded, &payload.input, CLIENT_TICK_RATE);
                 input_state.last_processed_input = payload.clone();
+                println!("Player pos: {}",position.0);
             }
             
             // clear buffer of all inputs already consumed

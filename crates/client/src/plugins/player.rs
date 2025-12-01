@@ -1,10 +1,14 @@
 use bevy::{mesh::CylinderAnchor, prelude::*};
 use networking::replication::{NetIdMap, SnapshotBuffer, SnapshotReceiveMessage};
-use shared::{components::{Grounded, LocalPlayer, Position, Velocity}, consts::CLIENT_TICK_RATE, functions::{apply_gravity, simulate_player, integrate}, messages::ClientTickMessage, resources::{ClientInputBuffer, LocalPlayerNetId, PendingAssignLocalPlayer, PlayerInput, PrevFrameTime, TickAccumulator}};
+use shared::{components::{Grounded, LocalPlayer}, consts::CLIENT_TICK_RATE, functions::{simulate_player}, messages::ClientTickMessage, resources::{ClientInputBuffer, LocalPlayerNetId, PendingAssignLocalPlayer, PlayerInput, PrevFrameTime, TickAccumulator}};
+use avian3d::prelude::*;
 
 pub struct ClientPlayerPlugin;
 impl Plugin for ClientPlayerPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(PhysicsPlugins::default());
+        app.add_plugins(PhysicsDebugPlugin::default());
+
         app.init_resource::<ClientTick>();
         app.init_resource::<PrevFrameTime>();
         app.init_resource::<TickAccumulator>();
@@ -15,15 +19,20 @@ impl Plugin for ClientPlayerPlugin {
 
         app.add_systems(Update, (
             assign_local_player_system,
+            client_tick_system
+                .before(avian3d::dynamics::integrator::integrate_positions)
+                .before(avian3d::dynamics::integrator::integrate_velocities),
 
-            client_tick_system,
-            local_player_movement_system
-              .before(networking::replication::receive_snapshots_system)
-              .after(client_tick_system),
-            server_reconciliation_system,
-            sync_position_system
-                .after(local_player_movement_system)
-                .after(server_reconciliation_system),
+            (
+                local_player_movement_system
+                //server_reconciliation_system,
+            )
+            .chain()
+            .before(networking::replication::receive_snapshots_system)
+            .before(avian3d::dynamics::integrator::integrate_positions)
+            .before(avian3d::dynamics::integrator::integrate_velocities)
+            .before(avian3d::dynamics::integrator::pre_process_velocity_increments)
+            .after(client_tick_system),
         ));
     }
 }
@@ -81,7 +90,7 @@ pub fn client_tick_system(
 pub fn local_player_movement_system(
     input: Res<PlayerInput>,
     mut player_position: Single<&mut Position, With<LocalPlayer>>,
-    mut player_velocity: Single<&mut Velocity, With<LocalPlayer>>,
+    mut player_velocity: Single<&mut LinearVelocity, With<LocalPlayer>>,
     mut player_grounded: Single<&mut Grounded, With<LocalPlayer>>,
     mut tick_message: MessageReader<ClientTickMessage>,
 ) {
@@ -92,7 +101,7 @@ pub fn local_player_movement_system(
 
 pub fn server_reconciliation_system(
     mut player_position: Single<&mut Position, With<LocalPlayer>>,
-    mut player_velocity: Single<&mut Velocity, With<LocalPlayer>>,
+    mut player_velocity: Single<&mut LinearVelocity, With<LocalPlayer>>,
     mut player_grounded: Single<&mut Grounded, With<LocalPlayer>>,
     mut snapshot_receive_message: MessageReader<SnapshotReceiveMessage>,
     mut client_input_buffer: ResMut<ClientInputBuffer>,
@@ -120,10 +129,3 @@ pub fn server_reconciliation_system(
     }
 }
 
-pub fn sync_position_system(
-    mut query: Query<(&mut Transform, &Position)>,
-) {
-    for (mut transform, position) in query.iter_mut() {
-        transform.translation = position.0;
-    }
-}
