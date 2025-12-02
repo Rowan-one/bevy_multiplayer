@@ -8,6 +8,12 @@ pub struct Player {
     pub client_id: u64,
 }
 
+#[derive(Debug, Default, Component)]
+pub struct CustomPosition(pub Vec3);
+
+#[derive(Debug, Default, Component)]
+pub struct CustomVelocity(pub Vec3);
+
 // local player marker component
 #[derive(Debug, Default, Clone, Copy, Component)]
 pub struct LocalPlayer;

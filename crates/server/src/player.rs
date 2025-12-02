@@ -1,4 +1,4 @@
-use avian3d::prelude::*;
+use bevy_rapier3d::prelude::*;
 use bevy::prelude::*;
 use bevy_replicon::prelude::*;
 use networking::{replication::NetIdGen, server::{ClientConnectMessage, OwnedByClient}};
@@ -11,6 +11,7 @@ impl Plugin for ServerPlayerPlugin {
         app.add_systems(Update, (
             spawn_players_system,
             process_inputs_system
+                .before(bevy_rapier3d::plugin::PhysicsSet::StepSimulation)
                 .before(networking::replication::send_snapshots_system),
         ));
     }
@@ -37,14 +38,15 @@ pub fn spawn_players_system(
                 OwnedByClient { id: message.client_id },
                 net_id,
             ))
-            .insert(Collider::sphere(1.))
-            .insert(RigidBody::Kinematic)
+            .insert(Collider::ball(1.))
+            .insert(RigidBody::KinematicPositionBased)
             .insert(Player {client_id: message.client_id as u64})
-            .insert(LinearVelocity(Vec3::ZERO))
-            .insert(Position(Vec3::new(0., 4.0, 0.)))
+            .insert(Velocity::default())
+            .insert(CustomVelocity::default())
+            .insert(Transform::from_xyz(0., 4.0, 0.))
             .insert(Grounded(true))
             .insert(RestingHeight(2.0))
-            .insert(TransformInterpolation)
+            .insert(Ccd::enabled())
             .id();
 
         // add player to lobby
@@ -62,7 +64,7 @@ pub fn process_inputs_system(
     mut input_state_map: ResMut<InputStateMap>,
     server_lobby: Res<ServerLobby>,
     mut server_tick_message: MessageReader<ServerTickMessage>,
-    mut query: Query<(&mut Position, &mut LinearVelocity, &mut Grounded)>
+    mut query: Query<(&mut Transform, &mut CustomVelocity, &mut Grounded)>
 ) {
     for _tick in server_tick_message.read() {
         for (client_id, input_state) in input_state_map.0.iter_mut() {
@@ -82,12 +84,11 @@ pub fn process_inputs_system(
             // make sure there are inputs to apply
             if inputs_to_apply.is_empty() { continue; }
             
-            let (mut position, mut velocity, mut grounded) = query.get_mut(*player_entity).unwrap();
+            let (mut transform, mut velocity, mut grounded) = query.get_mut(*player_entity).unwrap();
             for i in 0..inputs_to_apply.len() {
                 let payload = &inputs_to_apply[i];
-                simulate_player(&mut position, &mut velocity, &mut grounded, &payload.input, CLIENT_TICK_RATE);
+                (transform.translation, velocity.0) = simulate_player(transform.translation, velocity.0, &mut grounded, &payload.input, CLIENT_TICK_RATE);
                 input_state.last_processed_input = payload.clone();
-                println!("Player pos: {}",position.0);
             }
             
             // clear buffer of all inputs already consumed

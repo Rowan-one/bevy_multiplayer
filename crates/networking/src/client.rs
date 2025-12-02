@@ -1,9 +1,5 @@
 use std::{net::UdpSocket, time::SystemTime};
-use avian3d::prelude::Collider;
-use avian3d::prelude::LinearVelocity;
-use avian3d::prelude::Position;
-use avian3d::prelude::RigidBody;
-use avian3d::prelude::TransformInterpolation;
+use bevy_rapier3d::prelude::*;
 use bevy::prelude::*;
 use bevy_renet::{netcode::*, renet::RenetClient};
 use shared::components::*;
@@ -81,7 +77,8 @@ fn send_input_system(
 ) {
     for message in client_tick_message.read() {
         // only send input if it is different from doing nothing
-        // if player_input.clone() == PlayerInput::default() { return; }
+        if player_input.clone() == PlayerInput::default() { return; }
+        println!("sending input");
 
         // create input payload from resource
         let input = InputPayload {
@@ -114,12 +111,12 @@ fn replicate_players_system(
         commands.entity(entity).insert((
             Mesh3d(mesh),
             MeshMaterial3d(material),
-            Position(Vec3::new(0., 0.51, 0.)),
-            LinearVelocity::default(),
-            Collider::sphere(1.0),
-            RigidBody::Kinematic,
+            Velocity::default(),
+            CustomPosition::default(),
+            CustomVelocity::default(),
+            Collider::ball(1.),
+            RigidBody::KinematicPositionBased,
             Grounded(true),
-            TransformInterpolation,
         ));
     }
 }

@@ -1,6 +1,6 @@
 use glam::Vec3;
 use serde::{Serialize, Deserialize};
-use avian3d::prelude::{Position, LinearVelocity};
+use bevy_rapier3d::prelude::*;
 use crate::{components::{Grounded, Player}, resources::{ClientInputBuffer, PlayerInput}};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -34,8 +34,8 @@ pub struct ClientInputState {
 // currently unused
 #[derive(Debug, Default)]
 pub struct PlayerState {
-    pub position: Position,
-    pub velocity: LinearVelocity,
+    //pub position: Position,
+    pub velocity: Velocity,
     pub grounded: Grounded,
     pub input: PlayerInput,
 }

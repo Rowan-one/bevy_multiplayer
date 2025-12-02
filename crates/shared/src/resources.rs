@@ -23,7 +23,7 @@ pub struct LocalPlayerNetId(pub Option<u64>);
 #[derive(Debug, Default, Resource)]
 pub struct PendingAssignLocalPlayer(pub Option<AssignLocalPlayer>);
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, Resource)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, Resource)]
 pub struct PlayerInput{
     pub seq: u64,
 
