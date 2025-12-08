@@ -71,15 +71,11 @@ fn send_input_system(
     time: Res<Time>,
     mut client: ResMut<RenetClient>,
     mut input_sequence: ResMut<InputSequence>,
-    mut player_input: ResMut<PlayerInput>,
+    player_input: ResMut<PlayerInput>,
     mut client_input_buffer: ResMut<ClientInputBuffer>,
     mut client_tick_message: MessageReader<ClientTickMessage>,
 ) {
     for message in client_tick_message.read() {
-        // only send input if it is different from doing nothing
-        if player_input.clone() == PlayerInput::default() { return; }
-        println!("sending input");
-
         // create input payload from resource
         let input = InputPayload {
             seq: input_sequence.next(),
@@ -117,6 +113,7 @@ fn replicate_players_system(
             Collider::ball(1.),
             RigidBody::KinematicPositionBased,
             Grounded(true),
+            Transform::default(),
         ));
     }
 }

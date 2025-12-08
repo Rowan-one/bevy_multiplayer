@@ -112,8 +112,9 @@ pub fn receive_snapshots_system(
                 buf.pop_front();
             }
 
-            // send snapshot receive message
-            snapshot_receive_message.write(SnapshotReceiveMessage::default());
         }
+
+        // send snapshot receive message
+        snapshot_receive_message.write(SnapshotReceiveMessage::default());
     }
 }

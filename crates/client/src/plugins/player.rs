@@ -27,10 +27,10 @@ impl Plugin for ClientPlayerPlugin {
             assign_local_player_system,
             (
                 local_player_movement_system,
-                //server_reconciliation_system,
+                server_reconciliation_system,
                 //ground_check_system,
-                interpolate_local_player_system,
-                //sync_player_transform_system,
+                //interpolate_local_player_system,
+                sync_player_transform_system,
             ).chain()
                 .before(bevy_rapier3d::plugin::PhysicsSet::StepSimulation)
                 .before(bevy_rapier3d::plugin::PhysicsSet::SyncBackend)
@@ -194,7 +194,8 @@ pub fn ground_check_system(
 }
 
 pub fn sync_player_transform_system(
-    mut query: Single<(&mut Transform, &CustomPosition)>,
+    mut query: Single<(&mut Transform, &CustomPosition), With<LocalPlayer>>,
 ) {
+    println!("local player position: {}", query.1.0);
     query.0.translation = query.1.0;
 }
