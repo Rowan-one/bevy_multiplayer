@@ -2,7 +2,7 @@ use bevy_rapier3d::prelude::*;
 use bevy::prelude::*;
 use bevy_replicon::prelude::*;
 use networking::{replication::NetIdGen, server::{ClientConnectMessage, OwnedByClient}};
-use shared::{components::*, consts::CLIENT_TICK_RATE, functions::simulate_player, messages::{AssignLocalPlayerMessage, ServerTickMessage}, resources::*, structs::{AssignLocalPlayer, InputPayload}};
+use shared::{components::*, consts::{CLIENT_TICK_RATE, SERVER_TICK_RATE}, functions::{integrate, simulate_player}, messages::{AssignLocalPlayerMessage, ServerTickMessage}, resources::*, structs::{AssignLocalPlayer, InputPayload}};
 
 pub struct ServerPlayerPlugin;
 impl Plugin for ServerPlayerPlugin {
@@ -13,6 +13,10 @@ impl Plugin for ServerPlayerPlugin {
             process_inputs_system
                 .before(bevy_rapier3d::plugin::PhysicsSet::StepSimulation)
                 .before(networking::replication::send_snapshots_system),
+            integrate_players_system
+                .after(process_inputs_system),
+            sync_transforms_system
+                .after(integrate_players_system),
         ));
     }
 }
@@ -41,12 +45,11 @@ pub fn spawn_players_system(
             .insert(Collider::ball(1.))
             .insert(RigidBody::KinematicPositionBased)
             .insert(Player {client_id: message.client_id as u64})
-            .insert(Velocity::default())
             .insert(CustomVelocity::default())
-            .insert(Transform::from_xyz(0., 4.0, 0.))
+            .insert(CustomPosition(Vec3::new(0., 4.0, 0.)))
+            .insert(Transform::default())
             .insert(Grounded(true))
             .insert(RestingHeight(2.0))
-            .insert(Ccd::enabled())
             .id();
 
         // add player to lobby
@@ -61,6 +64,7 @@ pub fn spawn_players_system(
 }
 
 pub fn process_inputs_system(
+    rapier_context: ReadRapierContext,
     mut input_state_map: ResMut<InputStateMap>,
     server_lobby: Res<ServerLobby>,
     mut server_tick_message: MessageReader<ServerTickMessage>,
@@ -94,5 +98,25 @@ pub fn process_inputs_system(
             // clear buffer of all inputs already consumed
             input_state.buffer.retain(|p| p.seq > input_state.last_processed_input.seq);
         }
+    }
+}
+
+pub fn integrate_players_system(
+    rapier_context: ReadRapierContext,
+    mut server_tick_message: MessageReader<ServerTickMessage>,
+    mut query: Query<(&CustomVelocity, &mut CustomPosition)>,
+) {
+    for _tick in server_tick_message.read() {
+        for (velocity, mut position) in query.iter_mut() {
+            position.0 = integrate(&rapier_context.single().unwrap(), position.0, velocity.0, SERVER_TICK_RATE);
+        }
+    }
+}
+
+pub fn sync_transforms_system(
+    mut query: Query<(&CustomPosition, &mut Transform)>,
+) {
+    for (pos, mut transform) in query.iter_mut() {
+        transform.translation = pos.0;
     }
 }

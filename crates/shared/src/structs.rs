@@ -1,6 +1,6 @@
 use glam::Vec3;
 use serde::{Serialize, Deserialize};
-use bevy_rapier3d::prelude::*;
+use bevy_rapier3d::{parry::shape::Shape, prelude::*};
 use crate::{components::{Grounded, Player}, resources::{ClientInputBuffer, PlayerInput}};
 
 #[derive(Debug, Default, Serialize, Deserialize)]

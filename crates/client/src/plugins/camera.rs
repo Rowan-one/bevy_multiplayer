@@ -23,5 +23,5 @@ fn follow_player_system(
     local_player: Single<&Transform, With<LocalPlayer>>,
     mut camera: Single<&mut Transform, (With<Camera3d>, Without<LocalPlayer>)>,
 ) {
-    //camera.translation = local_player.translation + Vec3::new(0., 5., 0.);
+    camera.translation = local_player.translation + Vec3::new(0., 10., 2.);
 }

@@ -1,7 +1,7 @@
-use bevy::{prelude::*, render::alpha};
+use bevy::{color::palettes::css::{GREEN, RED}, prelude::*, render::alpha};
 use networking::replication::{NetIdMap, SnapshotBuffer, SnapshotReceiveMessage};
-use shared::{components::{CustomPosition, CustomVelocity, Grounded, LocalPlayer, RestingHeight}, consts::{CLIENT_TICK_RATE, MAX_FRAME_TIME}, functions::{simulate_player, spring_damper}, messages::ClientTickMessage, resources::{ClientInputBuffer, LocalPlayerNetId, PendingAssignLocalPlayer, PlayerInput, PrevFrameTime, TickAccumulator}};
-use bevy_rapier3d::prelude::*;
+use shared::{components::{CustomPosition, CustomVelocity, Grounded, LocalPlayer, RestingHeight}, consts::{CLIENT_TICK_RATE, MAX_FRAME_TIME}, functions::{integrate, simulate_player, spring_damper}, messages::ClientTickMessage, resources::{ClientInputBuffer, LocalPlayerNetId, PendingAssignLocalPlayer, PlayerInput, PrevFrameTime, TickAccumulator}};
+use bevy_rapier3d::{prelude::*, rapier};
 
 pub struct ClientPlayerPlugin;
 impl Plugin for ClientPlayerPlugin {
@@ -28,14 +28,15 @@ impl Plugin for ClientPlayerPlugin {
             (
                 local_player_movement_system,
                 server_reconciliation_system,
-                //ground_check_system,
-                //interpolate_local_player_system,
+                ground_check_system,
+                integrate_player_system,
                 sync_player_transform_system,
+                draw_player_velocity_system,
             ).chain()
-                .before(bevy_rapier3d::plugin::PhysicsSet::StepSimulation)
-                .before(bevy_rapier3d::plugin::PhysicsSet::SyncBackend)
-                .before(bevy_rapier3d::plugin::PhysicsSet::Writeback)
-                .before(networking::replication::receive_snapshots_system)
+                // .before(bevy_rapier3d::plugin::PhysicsSet::StepSimulation)
+                // .before(bevy_rapier3d::plugin::PhysicsSet::SyncBackend)
+                // .before(bevy_rapier3d::plugin::PhysicsSet::Writeback)
+                // .before(networking::replication::receive_snapshots_system)
         ));
     }
 }
@@ -145,7 +146,6 @@ pub fn server_reconciliation_system(
     local_player_net_id: Res<LocalPlayerNetId>,
 ) {
     for message in snapshot_receive_message.read() {
-        println!("snapshot received");
         // make sure local player id resource is initialized
         let Some(local_player_id) = local_player_net_id.0 else { return; };
         let Some(local_player_buf) = snapshot_buffer.0.get(&local_player_id) else { return; };
@@ -158,11 +158,16 @@ pub fn server_reconciliation_system(
         client_input_buffer.0.retain(|i| i.seq > last_processed_seq);
         client_input_buffer.0.sort_by_key(|i| i.seq);
 
-        println!("correcting");
         (player_position.0, player_velocity.0) = (latest_snap.position, latest_snap.velocity);
 
         for payload in client_input_buffer.0.iter() {
-            (player_position.0, player_velocity.0) = simulate_player(player_position.0, player_velocity.0, &mut player_grounded, &payload.input, CLIENT_TICK_RATE);
+            (player_position.0, player_velocity.0) = simulate_player(
+                player_position.0,
+                player_velocity.0,
+                &mut player_grounded,
+                &payload.input,
+                CLIENT_TICK_RATE,
+            );
         }
     }
 }
@@ -176,7 +181,7 @@ pub fn ground_check_system(
         let rapier_context = rapier_context.single().unwrap();
 
         for (position, mut velocity, mut grounded, resting_height) in query.iter_mut() {
-            if let Some(result) = rapier_context.cast_ray(position.0, Vec3::NEG_Y, resting_height.0, true, QueryFilter::exclude_kinematic()) {
+            if let Some(result) = rapier_context.cast_ray(position.0, Vec3::NEG_Y, resting_height.0, true, QueryFilter::only_fixed()) {
                 grounded.0 = true;
 
                 let x = resting_height.0 - result.1;
@@ -193,9 +198,31 @@ pub fn ground_check_system(
     }
 }
 
+pub fn integrate_player_system(
+    mut gizmos: Gizmos,
+    rapier_context: ReadRapierContext,
+    mut tick_message: MessageReader<ClientTickMessage>,
+    mut player_position: Single<&mut CustomPosition, With<LocalPlayer>>,
+    player_velocity: Single<&mut CustomVelocity, With<LocalPlayer>>,
+) {
+    for _tick in tick_message.read() {
+        let prev_pos = player_position.0;
+        player_position.0 = integrate(&rapier_context.single().unwrap(), player_position.0, player_velocity.0, CLIENT_TICK_RATE);
+
+        gizmos.arrow(prev_pos, prev_pos + (player_position.0 - prev_pos).normalize_or_zero() * 2.0, RED);
+    }
+}
+
 pub fn sync_player_transform_system(
     mut query: Single<(&mut Transform, &CustomPosition), With<LocalPlayer>>,
 ) {
-    println!("local player position: {}", query.1.0);
     query.0.translation = query.1.0;
+}
+
+pub fn draw_player_velocity_system(
+    mut gizmos: Gizmos,
+    player_velocity: Single<&mut CustomVelocity, With<LocalPlayer>>,
+    player_position: Single<&mut CustomPosition, With<LocalPlayer>>,
+) {
+    gizmos.arrow(player_position.0 + Vec3::new(0., -1.5, 0.), player_position.0 + player_velocity.0 + Vec3::new(0., -1.5, 0.), GREEN);
 }

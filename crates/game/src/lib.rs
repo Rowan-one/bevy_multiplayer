@@ -14,15 +14,22 @@ pub fn setup_level(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut
 
     // test 
     commands.spawn((
-        Collider::ball(1.),
-        RigidBody::Dynamic,
-        Velocity::default(),
-        Transform::from_xyz(0., 10., 0.),
+        Collider::cuboid(1., 5., 2.5),
+        RigidBody::Fixed,
+        Transform {
+            translation: Vec3::new(-10., 0., 2.5),
+            rotation: Quat::from_xyzw(0., 0., 0., 0.),
+            ..Default::default()
+        },
     ));
     commands.spawn((
-        Collider::cuboid(1., 5., 5.),
+        Collider::cuboid(1., 5., 2.5),
         RigidBody::Fixed,
-        Transform::from_xyz(-15., 0., 0.),
+        Transform {
+            translation: Vec3::new(-10., 0., -2.5),
+            rotation: Quat::from_xyzw(45., 45., 0., 0.),
+            ..Default::default()
+        },
     ));
 
     // light

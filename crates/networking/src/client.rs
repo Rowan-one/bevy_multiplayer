@@ -108,7 +108,7 @@ fn replicate_players_system(
             Mesh3d(mesh),
             MeshMaterial3d(material),
             Velocity::default(),
-            CustomPosition::default(),
+            CustomPosition(Vec3::new(0., 3., 0.)),
             CustomVelocity::default(),
             Collider::ball(1.),
             RigidBody::KinematicPositionBased,
