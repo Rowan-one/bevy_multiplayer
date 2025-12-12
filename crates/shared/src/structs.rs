@@ -1,6 +1,5 @@
 use glam::Vec3;
 use serde::{Serialize, Deserialize};
-use bevy_rapier3d::{parry::shape::Shape, prelude::*};
 use crate::{components::{Grounded, Player}, resources::{ClientInputBuffer, PlayerInput}};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -14,6 +13,7 @@ pub struct EntitySnap {
     pub net_id: u64,
     pub position: Vec3,
     pub velocity: Vec3,
+    pub gravity: Option<Vec3>,
     pub last_processed_seq: u64,
     pub timestamp: f32,
 }
@@ -29,13 +29,4 @@ pub struct InputPayload {
 pub struct ClientInputState {
     pub last_processed_input: InputPayload,
     pub buffer: Vec<InputPayload>,
-}
-
-// currently unused
-#[derive(Debug, Default)]
-pub struct PlayerState {
-    //pub position: Position,
-    pub velocity: Velocity,
-    pub grounded: Grounded,
-    pub input: PlayerInput,
 }

@@ -6,7 +6,7 @@ pub struct ClientCameraPlugin;
 impl Plugin for ClientCameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_camera);
-        app.add_systems(Update, (
+        app.add_systems(PostUpdate, (
             follow_player_system,
         ));
     }
@@ -23,5 +23,13 @@ fn follow_player_system(
     local_player: Single<&Transform, With<LocalPlayer>>,
     mut camera: Single<&mut Transform, (With<Camera3d>, Without<LocalPlayer>)>,
 ) {
-    camera.translation = local_player.translation + Vec3::new(0., 10., 2.);
+    let transform = Transform::from_xyz(
+        local_player.translation.x,
+        local_player.translation.y + 8.,
+        local_player.translation.z + 8.
+    )
+        .looking_at(local_player.translation, Vec3::Y);
+
+    camera.translation = transform.translation;
+    camera.rotation = transform.rotation;
 }

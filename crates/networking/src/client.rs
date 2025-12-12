@@ -105,15 +105,17 @@ fn replicate_players_system(
         let mesh = meshes.add(Mesh::from(Capsule3d::default()));
         let material = materials.add(Color::srgb(1., 0., 1.));
         commands.entity(entity).insert((
-            Mesh3d(mesh),
-            MeshMaterial3d(material),
+            // Mesh3d(mesh),
+            // MeshMaterial3d(material),
             Velocity::default(),
             CustomPosition(Vec3::new(0., 3., 0.)),
             CustomVelocity::default(),
+            Gravity::default(),
             Collider::ball(1.),
             RigidBody::KinematicPositionBased,
             Grounded(true),
             Transform::default(),
+            KinematicCharacterController::default(),
         ));
     }
 }

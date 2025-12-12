@@ -14,6 +14,20 @@ pub struct CustomPosition(pub Vec3);
 #[derive(Debug, Default, Component)]
 pub struct CustomVelocity(pub Vec3);
 
+#[derive(Debug, Component)]
+pub struct Gravity {
+    pub vector: Vec3,
+    pub scale: f32,
+}
+impl Default for Gravity {
+    fn default() -> Self {
+        Gravity {
+            vector: Vec3::ZERO,
+            scale: 1.0,
+        }
+    }
+}
+
 // local player marker component
 #[derive(Debug, Default, Clone, Copy, Component)]
 pub struct LocalPlayer;

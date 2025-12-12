@@ -1,6 +1,18 @@
-use bevy_rapier3d::{parry::shape::*, plugin::RapierContext, prelude::*};
-use glam::{Quat, Vec2, Vec3};
+use glam::{Quat, Vec3};
+use bevy_rapier3d::{parry::shape::Shape, prelude::*};
 use crate::{components::*, consts::*, resources::PlayerInput};
+
+pub fn project_and_scale(v: Vec3, n: Vec3) -> Vec3 {
+    let mag: f32 = v.length();
+    project_onto_plane(v, n).normalize_or_zero() * mag
+}
+
+pub fn project_onto_plane(
+    v: Vec3,
+    n: Vec3,
+) -> Vec3 {
+    v - n * v.dot(n)
+}
 
 pub fn spring_damper(
     k: f32, 
@@ -15,61 +27,64 @@ pub fn spring_damper(
 
 pub fn apply_gravity(
     velocity: Vec3,
+    scale: f32,
     dt: f32,
 ) -> Vec3 {
-    let a = Vec3::new(0., GRAVITY, 0.) * dt;
+    let a = Vec3::new(0., GRAVITY, 0.) * scale * dt;
     velocity + a
 }
 
 pub fn integrate(
-    rapier_context: &RapierContext,
     position: Vec3,
-    mut velocity: Vec3,
+    velocity: Vec3,
     dt: f32,
 ) -> Vec3 {
-    velocity *= dt;
-    velocity = collide_and_slide_player(position, velocity, 0, rapier_context);
-
     position + velocity
 }
 
-pub fn collide_and_slide_player(
+pub fn collide_and_slide(
     position: Vec3,
     velocity: Vec3,
+    shape: &dyn Shape,
     depth: u8,
+    gravity_pass: bool,
+    vel_init: Vec3,
     rapier_context: &RapierContext,
 ) -> Vec3 {
     // check if exceeded max depth
-    if depth >= MAX_COLLISION_BOUNCES { println!("reached max depth"); return Vec3::ZERO }
+    if depth >= MAX_COLLISION_BOUNCES { return Vec3::ZERO }
 
-    let shape = Ball::new(1.0 - SKIN_WIDTH);
     let dist: f32 = velocity.length() + SKIN_WIDTH;
 
-    if let Some(result) = rapier_context.cast_shape(
-        position,
-        Quat::default(),
-        velocity,
-        &shape,
-        ShapeCastOptions::with_max_time_of_impact(1.0), 
-        QueryFilter::only_fixed(),
-    ) {
+    if let Some(result) = rapier_context.cast_shape(position, Quat::IDENTITY, velocity.normalize(), shape, ShapeCastOptions::with_max_time_of_impact(dist), QueryFilter::only_fixed()) {
         let hit = result.1;
-        let mut snap_to_surface: Vec3 = velocity.normalize() * (hit.time_of_impact - SKIN_WIDTH);
-        if snap_to_surface.length_squared() <= f32::EPSILON {
-            return Vec3::ZERO;
-        }
+        let normal = hit.details.unwrap().normal1;
 
+        let mut snap_to_surface: Vec3 = velocity.normalize_or_zero() * (hit.time_of_impact - SKIN_WIDTH);
         let mut leftover: Vec3 = velocity - snap_to_surface;
+        let angle: f32 = Vec3::angle_between(Vec3::Y, normal).to_degrees();
 
         if snap_to_surface.length() <= SKIN_WIDTH {
-            println!("snap to surface smaller than skin width");
             snap_to_surface = Vec3::ZERO;
         }
 
-        let mag: f32 = leftover.length();
-        leftover = leftover.project_onto(hit.details.unwrap().normal1).normalize() * mag;
+        // normal ground / slope
+        if angle <= MAX_SLOPE_ANGLE {
+            if gravity_pass {
+                return snap_to_surface;
+            }
 
-        return snap_to_surface + collide_and_slide_player(position + snap_to_surface, leftover, depth+1, rapier_context);
+            leftover = project_and_scale(leftover, normal);
+        } else {
+            let scale: f32 = 1.0 - Vec3::dot(
+                Vec3::new(normal.x, 0., normal.z).normalize_or_zero(),
+                -Vec3::new(vel_init.x, 0., vel_init.z).normalize_or_zero()
+            );
+
+            leftover = project_and_scale(leftover, normal) * scale;
+        }
+
+        return snap_to_surface + collide_and_slide(position + snap_to_surface, leftover, shape, depth+1, gravity_pass, vel_init, rapier_context);
     }
     
     velocity
@@ -78,6 +93,7 @@ pub fn collide_and_slide_player(
 pub fn simulate_player(
     position: Vec3,
     mut velocity: Vec3,
+    gravity: &mut Gravity,
     grounded: &mut Grounded,
     input: &PlayerInput,
     dt: f32,
@@ -93,12 +109,12 @@ pub fn simulate_player(
 
     // jump
     if input.jump && grounded.0 {
-        velocity.y += PLAYER_JUMP_POWER;
+        gravity.vector.y += PLAYER_JUMP_POWER;
         grounded.0 = false;
     }
 
-    velocity = apply_gravity(velocity, dt);
-    // position = integrate(rapier_context, position, velocity, dt);
+    // apply gravity
+    gravity.vector = apply_gravity(gravity.vector, gravity.scale, dt);
 
     (position, velocity)
 }

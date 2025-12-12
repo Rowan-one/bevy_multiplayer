@@ -1,15 +1,15 @@
-use bevy::{color::palettes::css::{GREEN, RED}, prelude::*, render::alpha};
+use bevy::{color::palettes::css::{GREEN}, prelude::*};
 use networking::replication::{NetIdMap, SnapshotBuffer, SnapshotReceiveMessage};
-use shared::{components::{CustomPosition, CustomVelocity, Grounded, LocalPlayer, RestingHeight}, consts::{CLIENT_TICK_RATE, MAX_FRAME_TIME}, functions::{integrate, simulate_player, spring_damper}, messages::ClientTickMessage, resources::{ClientInputBuffer, LocalPlayerNetId, PendingAssignLocalPlayer, PlayerInput, PrevFrameTime, TickAccumulator}};
-use bevy_rapier3d::{prelude::*, rapier};
+use shared::{components::{CustomPosition, CustomVelocity, Gravity, Grounded, LocalPlayer, RestingHeight}, consts::{CLIENT_TICK_RATE, MAX_COLLISION_BOUNCES, MAX_FRAME_TIME, MAX_SLOPE_ANGLE, PLAYER_MOVE_SPEED, SKIN_WIDTH}, functions::{apply_gravity, collide_and_slide, integrate, project_and_scale, simulate_player, spring_damper}, messages::ClientTickMessage, resources::{ClientInputBuffer, LocalPlayerNetId, PendingAssignLocalPlayer, PlayerInput, PrevFrameTime, TickAccumulator}};
+use bevy_rapier3d::{parry::shape::{Ball, Shape}, prelude::*};
 
 pub struct ClientPlayerPlugin;
 impl Plugin for ClientPlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(RapierPhysicsPlugin::<NoUserData>::in_fixed_schedule(RapierPhysicsPlugin::default()));
+        app.add_plugins(RapierPhysicsPlugin::<NoUserData>::default());
         app.add_plugins(RapierDebugRenderPlugin::default());
 
-        app.insert_resource(TimestepMode::Fixed { dt: CLIENT_TICK_RATE, substeps: 10 });
+        app.insert_resource(TimestepMode::Fixed { dt: CLIENT_TICK_RATE, substeps: 5 });
 
         app.init_resource::<ClientTick>();
         app.init_resource::<TickAlpha>();
@@ -33,10 +33,10 @@ impl Plugin for ClientPlayerPlugin {
                 sync_player_transform_system,
                 draw_player_velocity_system,
             ).chain()
-                // .before(bevy_rapier3d::plugin::PhysicsSet::StepSimulation)
-                // .before(bevy_rapier3d::plugin::PhysicsSet::SyncBackend)
-                // .before(bevy_rapier3d::plugin::PhysicsSet::Writeback)
-                // .before(networking::replication::receive_snapshots_system)
+                .before(bevy_rapier3d::plugin::PhysicsSet::StepSimulation)
+                .before(bevy_rapier3d::plugin::PhysicsSet::SyncBackend)
+                .before(bevy_rapier3d::plugin::PhysicsSet::Writeback)
+                .before(networking::replication::receive_snapshots_system)
         ));
     }
 }
@@ -122,6 +122,7 @@ pub fn local_player_movement_system(
     mut player_position: Single<&mut CustomPosition, With<LocalPlayer>>,
     mut player_velocity: Single<&mut CustomVelocity, With<LocalPlayer>>,
     mut player_grounded: Single<&mut Grounded, With<LocalPlayer>>,
+    mut player_gravity: Single<&mut Gravity, With<LocalPlayer>>,
     mut tick_message: MessageReader<ClientTickMessage>,
 ) {
     for _tick in tick_message.read() {
@@ -129,6 +130,7 @@ pub fn local_player_movement_system(
         (player_position.0, player_velocity.0) = simulate_player(
             player_position.0,
             player_velocity.0,
+            &mut player_gravity,
             &mut player_grounded,
             &input, 
             CLIENT_TICK_RATE,
@@ -140,6 +142,7 @@ pub fn server_reconciliation_system(
     mut player_position: Single<&mut CustomPosition, With<LocalPlayer>>,
     mut player_velocity: Single<&mut CustomVelocity, With<LocalPlayer>>,
     mut player_grounded: Single<&mut Grounded, With<LocalPlayer>>,
+    mut player_gravity: Single<&mut Gravity, With<LocalPlayer>>,
     mut snapshot_receive_message: MessageReader<SnapshotReceiveMessage>,
     mut client_input_buffer: ResMut<ClientInputBuffer>,
     snapshot_buffer: Res<SnapshotBuffer>,
@@ -159,11 +162,15 @@ pub fn server_reconciliation_system(
         client_input_buffer.0.sort_by_key(|i| i.seq);
 
         (player_position.0, player_velocity.0) = (latest_snap.position, latest_snap.velocity);
+        if let Some(gravity) = latest_snap.gravity { // this should exist
+            player_gravity.vector = gravity;
+        }
 
         for payload in client_input_buffer.0.iter() {
             (player_position.0, player_velocity.0) = simulate_player(
                 player_position.0,
                 player_velocity.0,
+                &mut player_gravity,
                 &mut player_grounded,
                 &payload.input,
                 CLIENT_TICK_RATE,
@@ -174,21 +181,21 @@ pub fn server_reconciliation_system(
 
 pub fn ground_check_system(
     rapier_context: ReadRapierContext,
-    mut query: Query<(&CustomPosition, &mut CustomVelocity, &mut Grounded, &RestingHeight)>,
+    mut query: Query<(&CustomPosition, &mut Gravity, &mut Grounded, &RestingHeight)>,
     mut client_tick_message: MessageReader<ClientTickMessage>,
 ) {
     for _tick in client_tick_message.read() {
         let rapier_context = rapier_context.single().unwrap();
 
-        for (position, mut velocity, mut grounded, resting_height) in query.iter_mut() {
+        for (position, mut gravity, mut grounded, resting_height) in query.iter_mut() {
             if let Some(result) = rapier_context.cast_ray(position.0, Vec3::NEG_Y, resting_height.0, true, QueryFilter::only_fixed()) {
                 grounded.0 = true;
 
                 let x = resting_height.0 - result.1;
-                let x_dot = velocity.0.y;
+                let x_dot = gravity.vector.y;
 
-                let spring_force = spring_damper(1.0, 15.0, x, x_dot, CLIENT_TICK_RATE);
-                velocity.0.y += spring_force;
+                let spring_force = spring_damper(1.0, 10.0, x, x_dot, CLIENT_TICK_RATE);
+                gravity.vector.y += spring_force;
 
                 continue;
             }
@@ -199,17 +206,44 @@ pub fn ground_check_system(
 }
 
 pub fn integrate_player_system(
-    mut gizmos: Gizmos,
     rapier_context: ReadRapierContext,
     mut tick_message: MessageReader<ClientTickMessage>,
     mut player_position: Single<&mut CustomPosition, With<LocalPlayer>>,
     player_velocity: Single<&mut CustomVelocity, With<LocalPlayer>>,
+    player_gravity: Single<&mut Gravity, With<LocalPlayer>>,
 ) {
     for _tick in tick_message.read() {
-        let prev_pos = player_position.0;
-        player_position.0 = integrate(&rapier_context.single().unwrap(), player_position.0, player_velocity.0, CLIENT_TICK_RATE);
+        // scale velocity by delta time for integration
+        let move_vel: Vec3 = player_velocity.0 * CLIENT_TICK_RATE;
+        let gravity_vel: Vec3 = player_gravity.vector * CLIENT_TICK_RATE;
 
-        gizmos.arrow(prev_pos, prev_pos + (player_position.0 - prev_pos).normalize_or_zero() * 2.0, RED);
+        let shape = Ball::new(1.0 - SKIN_WIDTH);
+
+        // collide and slide movement pass
+        let collision_move_vector = collide_and_slide(
+            player_position.0,
+            move_vel,
+            &shape,
+            0,
+            false,
+            move_vel,
+            &rapier_context.single().unwrap(),
+        );
+
+        player_position.0 = integrate(player_position.0, collision_move_vector, CLIENT_TICK_RATE);
+
+        // collide and slide gravity pass
+        let collision_gravity_vector = collide_and_slide(
+            player_position.0,
+            gravity_vel,
+            &shape,
+            0,
+            true,
+            gravity_vel,
+            &rapier_context.single().unwrap(),
+        );
+
+        player_position.0 = integrate(player_position.0, collision_gravity_vector, CLIENT_TICK_RATE);
     }
 }
 
@@ -224,5 +258,5 @@ pub fn draw_player_velocity_system(
     player_velocity: Single<&mut CustomVelocity, With<LocalPlayer>>,
     player_position: Single<&mut CustomPosition, With<LocalPlayer>>,
 ) {
-    gizmos.arrow(player_position.0 + Vec3::new(0., -1.5, 0.), player_position.0 + player_velocity.0 + Vec3::new(0., -1.5, 0.), GREEN);
+    gizmos.arrow(player_position.0, player_position.0 + player_velocity.0, GREEN);
 }

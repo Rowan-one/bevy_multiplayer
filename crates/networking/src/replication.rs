@@ -6,7 +6,7 @@ use bevy_replicon::prelude::*;
 use bevy_rapier3d::prelude::*;
 use serde::{Serialize, Deserialize};
 
-use shared::{components::CustomVelocity, consts::TICKS_PER_SNAPSHOT, messages::*, resources::InputStateMap, structs::EntitySnap};
+use shared::{components::{CustomVelocity, Gravity}, consts::TICKS_PER_SNAPSHOT, messages::*, resources::InputStateMap, structs::EntitySnap};
 use crate::{protocol::ServerChannel, server::OwnedByClient};
 
 #[derive(Component, Debug, Clone, Copy, Hash, Serialize, Deserialize)]
@@ -39,7 +39,7 @@ pub struct Snapshot {
 
 pub fn send_snapshots_system(
     time: Res<Time>,
-    query: Query<(&Transform, &CustomVelocity, &NetId, &OwnedByClient), With<Replicated>>,
+    query: Query<(&Transform, &CustomVelocity, Option<&Gravity>, &NetId, &OwnedByClient), With<Replicated>>,
     input_state_map: Res<InputStateMap>,
     mut server: ResMut<RenetServer>,
     mut server_tick_message: MessageReader<ServerTickMessage>,
@@ -52,18 +52,24 @@ pub fn send_snapshots_system(
         let mut snapshot = Snapshot::default();
 
         // populate snapshot
-        for (&transform, velocity, &id, &client) in query.iter() {
+        for (&transform, velocity, gravity, &id, &client) in query.iter() {
 
             // get client's input state
             if let Some(input_state) = input_state_map.0.get(&client.id) {
 
-                let snap = EntitySnap {
+                let mut snap = EntitySnap {
                     net_id: id.0,
                     position: transform.translation,
                     velocity: velocity.0,
+                    gravity: None,
                     last_processed_seq: input_state.last_processed_input.seq,
                     timestamp: time.elapsed_secs(),
                 };
+
+                // add gravity to velocity if entity has gravity
+                if let Some(gravity) = gravity {
+                    snap.gravity = Some(gravity.vector * gravity.scale);
+                }
 
                 snapshot.entities.push(snap);
             }
@@ -104,6 +110,7 @@ pub fn receive_snapshots_system(
                                          // EntitySnap, might want to use entity_snap.timestamp
                 position: entity_snap.position,
                 velocity: entity_snap.velocity,
+                gravity: entity_snap.gravity,
                 last_processed_seq: entity_snap.last_processed_seq,
             });
 

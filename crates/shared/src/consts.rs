@@ -7,8 +7,9 @@ pub const PLAYER_DEACCEL: f32 = 1.;
 pub const MAX_FRAME_TIME: f32 = 0.25;
 pub const SERVER_TICK_RATE: f32 = 1./60.;
 pub const CLIENT_TICK_RATE: f32 = 1./60.;
-pub const TICKS_PER_SNAPSHOT: u8 = 5; // send a snapshot to client every n ticks
+pub const TICKS_PER_SNAPSHOT: u8 = 60; // send a snapshot to client every n ticks
 pub const GRAVITY: f32 = -9.81;
 
+pub const MAX_SLOPE_ANGLE: f32 = 55.0;
 pub const MAX_COLLISION_BOUNCES: u8 = 5; // for collide and slide
-pub const SKIN_WIDTH: f32 = 0.015;
+pub const SKIN_WIDTH: f32 = 0.05;
