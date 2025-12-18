@@ -1,18 +1,29 @@
-use std::collections::HashMap;
 use bevy_ecs::prelude::*;
 use serde::{Serialize, Deserialize};
-use glam::Vec3;
+use glam::{Quat, Vec3};
 
 #[derive(Debug, Component, Serialize, Deserialize)]
 pub struct Player {
     pub client_id: u64,
 }
 
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Component)]
+pub struct LookAngles {
+    pub yaw: f32,
+    pub pitch: f32,
+}
+
 #[derive(Debug, Default, Component)]
 pub struct CustomPosition(pub Vec3);
 
 #[derive(Debug, Default, Component)]
+pub struct CustomRotation(pub Quat);
+
+#[derive(Debug, Default, Component)]
 pub struct CustomVelocity(pub Vec3);
+
+#[derive(Debug, Default, Component)]
+pub struct WishDir(pub Vec3);
 
 #[derive(Debug, Component)]
 pub struct Gravity {

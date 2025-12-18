@@ -1,9 +1,8 @@
 use std::collections::HashMap;
-
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{enums::PlayerActionType, structs::{AssignLocalPlayer, ClientInputState, InputPayload}};
+use crate::{components::LookAngles, structs::*};
 
 #[derive(Debug, Default, Serialize, Deserialize, Resource)]
 pub struct ClientInputBuffer(pub Vec<InputPayload>);
@@ -23,7 +22,7 @@ pub struct LocalPlayerNetId(pub Option<u64>);
 #[derive(Debug, Default, Resource)]
 pub struct PendingAssignLocalPlayer(pub Option<AssignLocalPlayer>);
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, Resource)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, Resource)]
 pub struct PlayerInput{
     pub seq: u64,
 
@@ -31,6 +30,8 @@ pub struct PlayerInput{
     pub down: bool,
     pub left: bool,
     pub right: bool,
+
+    pub look_angles: LookAngles,
 
     pub jump: bool,
 }

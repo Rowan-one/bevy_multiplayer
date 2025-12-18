@@ -1,5 +1,6 @@
-use bevy::prelude::*;
-use shared::components::LocalPlayer;
+use bevy::{input::mouse::MouseMotion, prelude::*};
+use shared::{components::{LocalPlayer, LookAngles}, consts::BASE_SENSITIVITY};
+use crate::plugins::core::Settings;
 
 pub struct ClientCameraPlugin;
 
@@ -7,7 +8,10 @@ impl Plugin for ClientCameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_camera);
         app.add_systems(PostUpdate, (
-            follow_player_system,
+            (
+                rotate_camera_system,
+                follow_player_system,
+            ).chain(),
         ));
     }
 }
@@ -19,17 +23,28 @@ fn setup_camera(mut commands: Commands) {
     ));
 }
 
+fn rotate_camera_system(
+    settings: Res<Settings>,
+    mut look_angles: Single<&mut LookAngles, With<LocalPlayer>>,
+    mut mouse: MessageReader<MouseMotion>,
+    mut camera: Single<&mut Transform, With<Camera3d>>,
+) {
+    let mut delta = Vec2::ZERO;
+    for motion in mouse.read() {
+        delta += motion.delta;
+    }
+
+    let sensitivity = settings.sensitivity * BASE_SENSITIVITY;
+    look_angles.yaw -= delta.x * sensitivity;
+    look_angles.pitch -= delta.y * sensitivity;
+
+    camera.rotation = Quat::from_axis_angle(Vec3::Y, look_angles.yaw)
+        * Quat::from_axis_angle(Vec3::X, look_angles.pitch);
+}
+
 fn follow_player_system(
     local_player: Single<&Transform, With<LocalPlayer>>,
     mut camera: Single<&mut Transform, (With<Camera3d>, Without<LocalPlayer>)>,
 ) {
-    let transform = Transform::from_xyz(
-        local_player.translation.x,
-        local_player.translation.y + 8.,
-        local_player.translation.z + 8.
-    )
-        .looking_at(local_player.translation, Vec3::Y);
-
-    camera.translation = transform.translation;
-    camera.rotation = transform.rotation;
+    camera.translation = local_player.translation + camera.forward() * -8.0;
 }

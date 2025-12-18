@@ -1,17 +1,13 @@
-use glam::{Quat, Vec3};
-use bevy_rapier3d::{parry::shape::Shape, prelude::*};
+use glam::{Quat, Vec2, Vec3};
+use bevy_rapier3d::{na::clamp, parry::shape::{Ball, Shape}, prelude::*};
 use crate::{components::*, consts::*, resources::PlayerInput};
 
-pub fn project_and_scale(v: Vec3, n: Vec3) -> Vec3 {
-    let mag: f32 = v.length();
-    project_onto_plane(v, n).normalize_or_zero() * mag
-}
-
-pub fn project_onto_plane(
-    v: Vec3,
-    n: Vec3,
+pub fn integrate(
+    position: Vec3,
+    velocity: Vec3,
+    dt: f32,
 ) -> Vec3 {
-    v - n * v.dot(n)
+    position + velocity
 }
 
 pub fn spring_damper(
@@ -34,12 +30,16 @@ pub fn apply_gravity(
     velocity + a
 }
 
-pub fn integrate(
-    position: Vec3,
-    velocity: Vec3,
-    dt: f32,
+pub fn project_and_scale(v: Vec3, n: Vec3) -> Vec3 {
+    let mag: f32 = v.length();
+    project_onto_plane(v, n).normalize_or_zero() * mag
+}
+
+pub fn project_onto_plane(
+    v: Vec3,
+    n: Vec3,
 ) -> Vec3 {
-    position + velocity
+    v - n * v.dot(n)
 }
 
 pub fn collide_and_slide(
@@ -90,24 +90,56 @@ pub fn collide_and_slide(
     velocity
 }
 
+fn get_wish_dir(input: &PlayerInput, rotation: Quat) -> Vec3 {
+    let forward_vec = rotation * Vec3::Z;
+    let side_vec = rotation * Vec3::X;
+
+    let x = (input.right as i8 - input.left as i8) as f32;
+    let y = (input.down as i8 - input.up as i8) as f32;
+
+    (Vec3::ZERO + (forward_vec * y) + (side_vec * x)).normalize_or_zero()
+}
+
+fn apply_friction(vel: Vec3, dt: f32) -> Vec3 {
+    let control = f32::max(vel.length(), PLAYER_DEACCEL);
+    let drop = control * GROUND_FRICTION * dt;
+    let mut new_speed = f32::max(vel.length() - drop, 0.0);
+
+    if vel.length() > 0.0 {
+        new_speed /= vel.length();
+    }
+
+    vel * new_speed
+}
+
+fn update_vel_ground(wishdir: Vec3, mut vel: Vec3, dt: f32) -> Vec3 {
+    vel = apply_friction(vel, dt);
+
+    let current_speed = Vec3::dot(vel, wishdir);
+    let add_speed = (PLAYER_MOVE_SPEED - current_speed).clamp(0., PLAYER_ACCEL * dt);
+
+    vel + add_speed * wishdir
+}
+
 pub fn simulate_player(
-    position: Vec3,
+    rapier_context: &RapierContext,
+    mut position: Vec3,
+    rotation: Quat,
     mut velocity: Vec3,
     gravity: &mut Gravity,
     grounded: &mut Grounded,
+    resting_height: f32,
     input: &PlayerInput,
     dt: f32,
-) -> (Vec3, Vec3) { // (position, velocity)
-    let target_speed_x = PLAYER_MOVE_SPEED * (input.right as i8 - input.left as i8) as f32;
-    let target_speed_z = PLAYER_MOVE_SPEED * (input.down as i8 - input.up as i8) as f32;
-    let speed_diff_x = target_speed_x - velocity.x;
-    let speed_diff_z = target_speed_z - velocity.z;
-    let x = speed_diff_x * PLAYER_ACCEL * dt;
-    let z = speed_diff_z * PLAYER_ACCEL * dt;
+) -> (Vec3, Vec3, Vec3, Quat) { // (position, velocity, wish dir, rotation)
+    // get player rotation from look angles
+    let new_rot = Quat::from_axis_angle(Vec3::Y, input.look_angles.yaw);
 
-    velocity += Vec3::new(x, 0., z);
+    let wish_dir = get_wish_dir(input, rotation);
 
-    // jump
+    velocity = update_vel_ground(wish_dir, velocity, dt);
+
+    // apply jump input
     if input.jump && grounded.0 {
         gravity.vector.y += PLAYER_JUMP_POWER;
         grounded.0 = false;
@@ -116,5 +148,49 @@ pub fn simulate_player(
     // apply gravity
     gravity.vector = apply_gravity(gravity.vector, gravity.scale, dt);
 
-    (position, velocity)
+    // apply ground check and spring damper
+    if let Some(result) = rapier_context.cast_ray(position, Vec3::NEG_Y, resting_height, true, QueryFilter::only_fixed()) {
+        grounded.0 = true;
+
+        let x = resting_height - result.1;
+        let x_dot = gravity.vector.y;
+
+        let spring_force = spring_damper(1.0, 10.0, x, x_dot, dt);
+        gravity.vector.y += spring_force;
+    } else { grounded.0 = false; }
+
+    // integrate with collide and slide
+    // scale velocity by delta time for integration
+    let move_vel: Vec3 = velocity * dt;
+    let gravity_vel: Vec3 = gravity.vector * dt;
+
+    let shape = Ball::new(1.0 - SKIN_WIDTH);
+
+    // collide and slide movement pass
+    let collision_move_vector = collide_and_slide(
+        position,
+        move_vel,
+        &shape,
+        0,
+        false,
+        move_vel,
+        &rapier_context,
+    );
+
+    position = integrate(position, collision_move_vector, dt);
+
+    // collide and slide gravity pass
+    let collision_gravity_vector = collide_and_slide(
+        position,
+        gravity_vel,
+        &shape,
+        0,
+        true,
+        gravity_vel,
+        &rapier_context,
+    );
+
+    position = integrate(position, collision_gravity_vector, dt);
+
+    (position, velocity, wish_dir, new_rot)
 }

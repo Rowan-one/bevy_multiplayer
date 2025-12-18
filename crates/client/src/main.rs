@@ -1,6 +1,5 @@
 use bevy::{diagnostic::FrameTimeDiagnosticsPlugin, prelude::*};
-use bevy_rapier3d::plugin::{NoUserData, RapierPhysicsPlugin};
-use client::plugins::{camera::ClientCameraPlugin, input::ClientInputPlugin, player::ClientPlayerPlugin};
+use client::plugins::{camera::ClientCameraPlugin, core::ClientCorePlugin, input::ClientInputPlugin, player::ClientPlayerPlugin};
 use networking::client::NetClientPlugin;
 use game::setup_level;
 
@@ -10,6 +9,7 @@ fn main() {
 
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins((
+            ClientCorePlugin,
             ClientInputPlugin,
             ClientCameraPlugin,
             ClientPlayerPlugin,

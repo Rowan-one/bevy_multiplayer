@@ -1,8 +1,11 @@
 //
+pub const BASE_SENSITIVITY: f32 = 0.001;
+
 pub const PLAYER_MOVE_SPEED: f32 = 5.0;
 pub const PLAYER_JUMP_POWER: f32 = 5.0;
-pub const PLAYER_ACCEL: f32 = 10.;
-pub const PLAYER_DEACCEL: f32 = 1.;
+pub const PLAYER_ACCEL: f32 = 50.;
+pub const PLAYER_DEACCEL: f32 = 10.;
+pub const GROUND_FRICTION: f32 = 3.;
 
 pub const MAX_FRAME_TIME: f32 = 0.25;
 pub const SERVER_TICK_RATE: f32 = 1./60.;

@@ -75,7 +75,7 @@ fn send_input_system(
     mut client_input_buffer: ResMut<ClientInputBuffer>,
     mut client_tick_message: MessageReader<ClientTickMessage>,
 ) {
-    for message in client_tick_message.read() {
+    for _message in client_tick_message.read() {
         // create input payload from resource
         let input = InputPayload {
             seq: input_sequence.next(),
@@ -95,7 +95,6 @@ fn send_input_system(
 
 fn replicate_players_system(
     mut commands: Commands,
-    mut client: ResMut<RenetClient>,
     query: Query<Entity, (Added<Player>, With<Replicated>)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -105,17 +104,19 @@ fn replicate_players_system(
         let mesh = meshes.add(Mesh::from(Capsule3d::default()));
         let material = materials.add(Color::srgb(1., 0., 1.));
         commands.entity(entity).insert((
-            // Mesh3d(mesh),
-            // MeshMaterial3d(material),
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
             Velocity::default(),
             CustomPosition(Vec3::new(0., 3., 0.)),
+            CustomRotation::default(),
             CustomVelocity::default(),
             Gravity::default(),
             Collider::ball(1.),
             RigidBody::KinematicPositionBased,
             Grounded(true),
             Transform::default(),
-            KinematicCharacterController::default(),
+            WishDir::default(),
+            LookAngles::default(),
         ));
     }
 }
@@ -156,7 +157,6 @@ fn interpolate_entities_system(
         let samples: Vec<EntitySnap> = deque.iter().copied().collect();
 
         // find window bracketing render time
-        let mut found = false;
         let mut s1: (f32, Vec3) = (0., Vec3::ZERO);
         let mut s2: (f32, Vec3) = (0., Vec3::ZERO);
         for window in samples.windows(2) {
@@ -172,7 +172,6 @@ fn interpolate_entities_system(
         // calculate alpha
         let denom = (s2.0 - s1.0).max(f32::EPSILON);
         let a = ((render_time - s1.0) / denom).clamp(0.0, 1.0);
-        //println!("Alpha: {}", a);
 
         transform.translation = s1.1.lerp(s2.1, a);
     }
@@ -182,8 +181,6 @@ fn receive_local_player_system(
     mut client: ResMut<RenetClient>,
     mut local_player_net_id: ResMut<LocalPlayerNetId>,
     mut pending_assign_local_player: ResMut<PendingAssignLocalPlayer>,
-    net_id_map: Res<NetIdMap>,
-    mut commands: Commands,
 ) {
     let config = bincode::config::standard();
 
