@@ -1,5 +1,5 @@
 use bevy::{input::mouse::MouseMotion, prelude::*};
-use shared::{components::{LocalPlayer, LookAngles}, resources::{ClientInputBuffer, InputSequence, PlayerInput}};
+use shared::{components::{LocalPlayer, LookAngles}, resources::{ClientInputBuffer, CurrentFrameInput, InputSequence, PlayerInput}};
 
 pub struct ClientInputPlugin;
 impl Plugin for ClientInputPlugin {

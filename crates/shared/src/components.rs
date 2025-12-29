@@ -43,6 +43,9 @@ impl Default for Gravity {
 #[derive(Debug, Default, Clone, Copy, Component)]
 pub struct LocalPlayer;
 
+#[derive(Debug, Default, Component)]
+pub struct ServerPosition(pub Vec3);
+
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, Component)]
 pub struct Grounded(pub bool);
 

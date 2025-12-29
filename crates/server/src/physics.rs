@@ -10,7 +10,7 @@ impl Plugin for ServerPhysicsPlugin {
         app.insert_resource(TimestepMode::Fixed { dt: SERVER_TICK_RATE, substeps: 5 });
         
         app.add_systems(Update, (
-            sync_transforms_system,
+            sync_transforms_system.before(networking::replication::send_snapshots_system),
         ));
     }
 }

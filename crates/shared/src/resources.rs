@@ -39,6 +39,9 @@ pub struct PlayerInput{
 #[derive(Debug, Default, Resource)]
 pub struct InputStateMap(pub HashMap<u64, ClientInputState>);
 
+#[derive(Debug, Default, Resource)] //currently unused
+pub struct CurrentFrameInput(pub Vec<PlayerInput>);
+
 #[derive(Debug, Default, Resource)]
 pub struct PrevFrameTime(pub f32);
 

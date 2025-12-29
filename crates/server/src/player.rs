@@ -12,7 +12,7 @@ impl Plugin for ServerPlayerPlugin {
             spawn_players_system,
             process_inputs_system
                 .before(bevy_rapier3d::plugin::PhysicsSet::StepSimulation)
-                .before(networking::replication::send_snapshots_system),
+                .before(crate::physics::sync_transforms_system),
         ));
     }
 }

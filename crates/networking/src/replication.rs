@@ -3,7 +3,6 @@ use std::collections::{HashMap, VecDeque};
 use bevy::prelude::*;
 use bevy_renet::renet::{RenetClient, RenetServer};
 use bevy_replicon::prelude::*;
-use bevy_rapier3d::prelude::*;
 use serde::{Serialize, Deserialize};
 
 use shared::{components::{CustomVelocity, Gravity}, consts::TICKS_PER_SNAPSHOT, messages::*, resources::InputStateMap, structs::EntitySnap};

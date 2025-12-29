@@ -38,6 +38,9 @@ fn rotate_camera_system(
     look_angles.yaw -= delta.x * sensitivity;
     look_angles.pitch -= delta.y * sensitivity;
 
+    // clamp vertical look angle
+    look_angles.pitch = look_angles.pitch.clamp(-1.0, 1.0); // radians
+
     camera.rotation = Quat::from_axis_angle(Vec3::Y, look_angles.yaw)
         * Quat::from_axis_angle(Vec3::X, look_angles.pitch);
 }
@@ -46,5 +49,9 @@ fn follow_player_system(
     local_player: Single<&Transform, With<LocalPlayer>>,
     mut camera: Single<&mut Transform, (With<Camera3d>, Without<LocalPlayer>)>,
 ) {
-    camera.translation = local_player.translation + camera.forward() * -8.0;
+    let forward = camera.forward();
+    let right = camera.right();
+    camera.translation = local_player.translation + forward * -8.0;
+    camera.translation += Vec3::new(0., 0.5, 0.);
+    camera.translation += right * 1.0;
 }

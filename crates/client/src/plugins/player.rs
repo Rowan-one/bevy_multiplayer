@@ -21,10 +21,11 @@ impl Plugin for ClientPlayerPlugin {
             assign_local_player_system,
             (
                 update_player_rotation_system,
-                local_player_movement_system,
                 server_reconciliation_system,
+                local_player_movement_system,
                 sync_player_transform_system,
                 draw_player_velocity_system,
+                draw_server_position_system,
             ).chain()
                 .before(bevy_rapier3d::plugin::PhysicsSet::StepSimulation)
                 .before(bevy_rapier3d::plugin::PhysicsSet::SyncBackend)
@@ -92,8 +93,11 @@ pub fn local_player_movement_system(
 }
 
 pub fn server_reconciliation_system(
+    mut gizmos: Gizmos,
     rapier_context: ReadRapierContext,
+    current_input_seq: Res<InputSequence>,
     mut player_position: Single<&mut CustomPosition, With<LocalPlayer>>,
+    mut player_server_position: Single<&mut ServerPosition, With<LocalPlayer>>,
     mut player_rotation: Single<&mut CustomRotation, With<LocalPlayer>>,
     mut player_velocity: Single<&mut CustomVelocity, With<LocalPlayer>>,
     mut player_wishdir: Single<&mut WishDir, With<LocalPlayer>>,
@@ -114,16 +118,28 @@ pub fn server_reconciliation_system(
 
         // get last processed input sequence and re-compute inputs from that point
         let last_processed_seq = latest_snap.last_processed_seq;
+        // println!("last processed seq: {}, current input seq: {}", last_processed_seq, current_input_seq.0);
+
+        let entries_before: u8 = client_input_buffer.0.len() as u8;
 
         client_input_buffer.0.retain(|i| i.seq > last_processed_seq);
         client_input_buffer.0.sort_by_key(|i| i.seq);
+        let mut entries_after: u8 = 0;
+        if client_input_buffer.0.is_empty() == false {
+            entries_after = client_input_buffer.0.len() as u8;
+        }
+
+        // println!("deleted input entries: {}",entries_before - entries_after);
 
         (player_position.0, player_velocity.0) = (latest_snap.position, latest_snap.velocity);
         if let Some(gravity) = latest_snap.gravity { // this should exist
             player_gravity.vector = gravity;
         }
+        
+        player_server_position.0 = latest_snap.position;
 
         for payload in client_input_buffer.0.iter() {
+            // println!("re-applying unprocessed input");
             (player_position.0, player_velocity.0, player_wishdir.0, player_rotation.0) = simulate_player(
                 &rapier_context.single().unwrap(),
                 player_position.0,
@@ -153,4 +169,11 @@ pub fn draw_player_velocity_system(
 ) {
     gizmos.arrow(player_position.0, player_position.0 + player_velocity.0, GREEN);
     gizmos.arrow(player_position.0, player_position.0 + player_wishdir.0, BLUE);
+}
+
+fn draw_server_position_system(
+    mut gizmos: Gizmos,
+    player_server_position: Single<&mut ServerPosition, With<LocalPlayer>>,
+) {
+    gizmos.sphere(Isometry3d::new(player_server_position.0, Quat::IDENTITY), 1.1, GREEN);
 }
