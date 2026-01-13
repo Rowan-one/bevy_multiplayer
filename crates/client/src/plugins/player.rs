@@ -1,7 +1,8 @@
 use bevy::{color::palettes::css::*, prelude::*};
+use bevy_egui::egui::TextBuffer;
 use networking::replication::{NetIdMap, SnapshotBuffer, SnapshotReceiveMessage};
-use shared::{components::*, consts::*, functions::*, messages::ClientTickMessage, resources::*};
-use bevy_rapier3d::prelude::*;
+use shared::{components::*, consts::*, enums::IKSolverType, functions::*, messages::ClientTickMessage, resources::*};
+use bevy_rapier3d::{prelude::*};
 
 pub struct ClientPlayerPlugin;
 impl Plugin for ClientPlayerPlugin {
@@ -19,7 +20,10 @@ impl Plugin for ClientPlayerPlugin {
 
         app.add_systems(Update, (
             assign_local_player_system,
+            init_player_rig_system,
+            detect_bones_system,
             (
+                update_anim_state_time_system,
                 update_player_rotation_system,
                 server_reconciliation_system,
                 local_player_movement_system,
@@ -32,11 +36,25 @@ impl Plugin for ClientPlayerPlugin {
                 .before(bevy_rapier3d::plugin::PhysicsSet::Writeback)
                 .before(networking::replication::receive_snapshots_system)
         ));
+
+        app.add_systems(PostUpdate, animate_player_system);
     }
 }
 
 #[derive(Debug, Default, Resource)]
 pub struct PrevPlayerPos(pub Vec3);
+
+#[derive(Debug, Component)]
+pub struct PlayerBoneMap {
+    pub shoulder_l: Entity,
+    pub shoulder_r: Entity,
+    pub upper_arm_l: Entity,
+    pub upper_arm_r: Entity,
+    pub forearm_l: Entity,
+    pub forearm_r: Entity,
+    pub hand_l: Entity,
+    pub hand_r: Entity,
+}
 
 pub fn assign_local_player_system(
     mut commands: Commands,
@@ -53,6 +71,24 @@ pub fn assign_local_player_system(
 
         // no longer pending
         pending_assign.0 = None;
+    }
+}
+
+pub fn init_player_rig_system(
+    mut commands: Commands,
+    mut query: Query<(Entity, &PlayerBoneMap), (With<LocalPlayer>, Added<PlayerBoneMap>)>,
+) {
+    for (entity, bone_map) in query.iter_mut() {
+        let target = commands.spawn((IKTarget, Transform::from_xyz(0., 1.5, 0.))).id();
+        let rig = IKRig::default()
+            .add_chain(
+                IKChain::new(target, IKSolverType::TwoBone)
+                    .add(IKSegment::new(2.0, Some(bone_map.upper_arm_l)))
+                    .add(IKSegment::new(1.0, Some(bone_map.forearm_l)))
+                    .add(IKSegment::new(0.5, Some(bone_map.hand_l)))
+            );
+
+        commands.entity(entity).insert(rig);
     }
 }
 
@@ -93,9 +129,7 @@ pub fn local_player_movement_system(
 }
 
 pub fn server_reconciliation_system(
-    mut gizmos: Gizmos,
     rapier_context: ReadRapierContext,
-    current_input_seq: Res<InputSequence>,
     mut player_position: Single<&mut CustomPosition, With<LocalPlayer>>,
     mut player_server_position: Single<&mut ServerPosition, With<LocalPlayer>>,
     mut player_rotation: Single<&mut CustomRotation, With<LocalPlayer>>,
@@ -118,18 +152,9 @@ pub fn server_reconciliation_system(
 
         // get last processed input sequence and re-compute inputs from that point
         let last_processed_seq = latest_snap.last_processed_seq;
-        // println!("last processed seq: {}, current input seq: {}", last_processed_seq, current_input_seq.0);
-
-        let entries_before: u8 = client_input_buffer.0.len() as u8;
 
         client_input_buffer.0.retain(|i| i.seq > last_processed_seq);
         client_input_buffer.0.sort_by_key(|i| i.seq);
-        let mut entries_after: u8 = 0;
-        if client_input_buffer.0.is_empty() == false {
-            entries_after = client_input_buffer.0.len() as u8;
-        }
-
-        // println!("deleted input entries: {}",entries_before - entries_after);
 
         (player_position.0, player_velocity.0) = (latest_snap.position, latest_snap.velocity);
         if let Some(gravity) = latest_snap.gravity { // this should exist
@@ -156,9 +181,107 @@ pub fn server_reconciliation_system(
 }
 
 pub fn sync_player_transform_system(
-    mut query: Single<(&mut Transform, &CustomPosition), With<LocalPlayer>>,
+    mut query: Single<(&mut Transform, &CustomPosition, &CustomRotation), With<LocalPlayer>>,
 ) {
     query.0.translation = query.1.0;
+    query.0.rotation = query.2.0;
+}
+
+pub fn update_anim_state_time_system(
+    time: Res<Time>,
+    mut anim_state_time: Single<&mut AnimStateTime, With<LocalPlayer>>,
+    player_velocity: Single<&CustomVelocity, With<LocalPlayer>>,
+) {
+    let scale = player_velocity.0.length() / PLAYER_MOVE_SPEED;
+    anim_state_time.0 += time.delta_secs() * scale;
+}
+
+pub fn animate_player_system(
+    time: Res<Time>,
+    player_transform: Single<&Transform, With<LocalPlayer>>,
+    ik_rig: Single<&mut IKRig, With<LocalPlayer>>,
+    anim_state_time: Single<&AnimStateTime, With<LocalPlayer>>,
+    mut transforms: Query<&mut Transform, Without<LocalPlayer>>,
+) {
+    let mut transform = transforms.get_mut(ik_rig.chains.get(0).unwrap().target).unwrap();
+    transform.translation = player_transform.translation
+        - (player_transform.right() * 0.5)
+        + (player_transform.forward() * ((time.elapsed_secs() * 5.).sin() * 0.5))
+        + (player_transform.up() * 0.0)
+}
+
+pub fn detect_bones_system(
+    mut commands: Commands,
+    roots: Query<(Entity, &Children), With<LoadingBoneCache>>,
+    names: Query<&Name>,
+    children: Query<&Children>,
+) {
+    for (root, kids) in &roots {
+        let mut shoulder_l: Option<Entity> = None;
+        let mut shoulder_r: Option<Entity> = None;
+        let mut upper_arm_l: Option<Entity> = None;
+        let mut upper_arm_r: Option<Entity> = None;
+        let mut forearm_l: Option<Entity> = None;
+        let mut forearm_r: Option<Entity> = None;
+        let mut hand_l: Option<Entity> = None;
+        let mut hand_r: Option<Entity> = None;
+
+        let mut stack: Vec<Entity> = kids.iter().collect();
+        while let Some(e) = stack.pop() {
+            if let Ok(name) = names.get(e) {
+                match name.as_str() {
+                    "DEF-shoulder.L" => shoulder_l = Some(e),
+                    "DEF-shoulder.R" => shoulder_r = Some(e),
+                    "DEF-upper_arm.L" => upper_arm_l = Some(e),
+                    "DEF-upper_arm.R" => upper_arm_r = Some(e),
+                    "DEF-forearm.L" => forearm_l = Some(e),
+                    "DEF-forearm.R" => forearm_r = Some(e),
+                    "DEF-hand.L" => hand_l = Some(e),
+                    "DEF-hand.R" => hand_r = Some(e),
+                    _ => { }
+                }
+            }
+
+            if let Ok(k) = children.get(e) {
+                stack.extend(k.iter());
+            }
+
+            // make sure we have all of the bones
+            if let (
+                Some(shoulder_l),
+                Some(shoulder_r),
+                Some(upper_arm_l),
+                Some(upper_arm_r),
+                Some(forearm_l),
+                Some(forearm_r),
+                Some(hand_l),
+                Some(hand_r),
+            ) = (
+                shoulder_l,
+                shoulder_r,
+                upper_arm_l,
+                upper_arm_r,
+                forearm_l,
+                forearm_r,
+                hand_l,
+                hand_r,
+            ) {
+                commands.entity(root)
+                    .remove::<LoadingBoneCache>()
+                    .insert(PlayerBoneMap {
+                        shoulder_l,
+                        shoulder_r,
+                        upper_arm_l,
+                        upper_arm_r,
+                        forearm_l,
+                        forearm_r,
+                        hand_l,
+                        hand_r,
+                    });
+                println!("got all bones");
+            }
+        }
+    }
 }
 
 pub fn draw_player_velocity_system(
@@ -171,7 +294,7 @@ pub fn draw_player_velocity_system(
     gizmos.arrow(player_position.0, player_position.0 + player_wishdir.0, BLUE);
 }
 
-fn draw_server_position_system(
+pub fn draw_server_position_system(
     mut gizmos: Gizmos,
     player_server_position: Single<&mut ServerPosition, With<LocalPlayer>>,
 ) {

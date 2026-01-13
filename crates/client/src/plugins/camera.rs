@@ -39,7 +39,7 @@ fn rotate_camera_system(
     look_angles.pitch -= delta.y * sensitivity;
 
     // clamp vertical look angle
-    look_angles.pitch = look_angles.pitch.clamp(-1.0, 1.0); // radians
+    look_angles.pitch = look_angles.pitch.clamp(-1.0, 1.0);
 
     camera.rotation = Quat::from_axis_angle(Vec3::Y, look_angles.yaw)
         * Quat::from_axis_angle(Vec3::X, look_angles.pitch);

@@ -5,6 +5,7 @@ use bevy_renet::{netcode::*, renet::RenetClient};
 use shared::components::*;
 use bevy_replicon::prelude::*;
 use bevy_replicon_renet::*;
+use shared::enums::IKSolverType;
 use shared::messages::ClientTickMessage;
 use shared::resources::*;
 use shared::structs::*;
@@ -95,17 +96,16 @@ fn send_input_system(
 
 fn replicate_players_system(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     query: Query<Entity, (Added<Player>, With<Replicated>)>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for entity in query.iter() {
-        println!("Player replicated to client");
-        let mesh = meshes.add(Mesh::from(Capsule3d::default()));
-        let material = materials.add(Color::srgb(1., 0., 1.));
+        // player model
+        let player_gltf: &str = "LowPolyCharacter.glb";
+        let scene: Handle<Scene> = asset_server.load(GltfAssetLabel::Scene(0).from_asset(player_gltf));
+
         commands.entity(entity).insert((
-            Mesh3d(mesh),
-            MeshMaterial3d(material),
+            Name::new("Player"),
             Velocity::default(),
             CustomPosition(Vec3::new(0., 4., 0.)),
             ServerPosition::default(),
@@ -118,6 +118,15 @@ fn replicate_players_system(
             Transform::default(),
             WishDir::default(),
             LookAngles::default(),
+            AnimStateTime::default(),
+            children![(
+                PlayerVisualRoot,
+                SceneRoot(scene),
+                Transform::from_xyz(0., -1.85, 0.),
+            )]
+        ))
+        .insert((
+            LoadingBoneCache,
         ));
     }
 }

@@ -6,3 +6,14 @@ pub enum PlayerActionType {
     PrimaryUse,
     SecondaryUse,
 }
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum IKSolverType {
+    Fabrik,
+    TwoBone
+}
+impl Default for IKSolverType {
+    fn default() -> Self {
+        IKSolverType::Fabrik
+    }
+}

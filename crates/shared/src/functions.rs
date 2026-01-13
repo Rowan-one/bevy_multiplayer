@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+use bevy_ecs::prelude::*;
 use glam::{Quat, Vec2, Vec3};
 use bevy_rapier3d::{na::clamp, parry::shape::{Ball, Shape}, prelude::*};
 use crate::{components::*, consts::*, resources::PlayerInput};
@@ -193,4 +195,92 @@ pub fn simulate_player(
     position = integrate(position, collision_gravity_vector, dt);
 
     (position, velocity, wish_dir, new_rot)
+}
+
+fn perpendicular_unit_vector(n: Vec3, v: Vec3) -> Vec3 {
+    let projected = v - n * v.dot(n);
+    let len_sq = projected.length_squared();
+    if len_sq > 1e-6 {
+        projected / len_sq.sqrt()
+    } else {
+        n.any_orthonormal_vector()
+    }
+}
+
+pub fn solve_two_bone_ik(
+    a: Vec3, // root position (shoulder, hip)
+    b: Vec3, // initial mid position (elbow, knee)
+    c: Vec3, // initial end position (hand, foot)
+    t: Vec3, // target position
+) -> (Vec3, Vec3) { // returns (b position, c position)
+    let len_ab: f32 = (b-a).length();
+    let len_bc: f32 = (c-b).length();
+    let len_at: f32 = (t-a).length();
+
+    // unit vector from t to a
+    let mut n: Vec3 = (a-t).normalize();
+    if len_at < 0.001 {
+        n = Vec3::new(1.0, 0.0, 0.);
+    }
+
+    let mut reached_target: bool = false;
+    let b_final: Vec3;
+    let c_final: Vec3;
+    if len_at < (len_ab - len_bc).abs() {
+        // target is too close
+        let sign = if len_ab > len_bc { 1.0 } else { -1.0 };
+        b_final = a - sign * len_ab * n;
+        c_final = b_final + sign * len_bc * n;
+
+    } else if len_at <= len_ab + len_bc {
+        // target is reachable
+        reached_target = true;
+        c_final = t;
+
+        // the final knee position will rest somewhere on a circle that is the intersecting point
+        // of two spheres, the sphere of the radius len_ab and the sphere of the radius len_bc
+        
+        // cos of angle t - a - b_final
+        let cos_theta: f32 = // law of cosines
+            (len_bc * len_bc - len_ab * len_ab - len_at * len_at) / (-2. * len_ab * len_at);
+        let sin_theta: f32 = (1.0 - cos_theta * cos_theta).sqrt();
+
+        // radius of the cirlce that b_final must lay on
+        let r: f32 = len_ab * sin_theta;
+
+        // center of the circle
+        let m: Vec3 = a - len_ab * cos_theta * n;
+
+        let u: Vec3 = perpendicular_unit_vector(n, b-m);
+
+        // compute final knee position
+        b_final = m + r * u;
+
+    } else {
+        // target is too far
+        b_final = a - len_ab * n;
+        c_final = b_final - len_bc * n;
+    }
+
+    (b_final, c_final)
+}
+
+pub fn quat_from_to(from: Vec3, to: Vec3) -> Quat {
+    let f = from.normalize();
+    let t = to.normalize();
+    let dot = f.dot(t).clamp(-1.0, 1.0);
+
+    if dot > 0.9999 {
+        Quat::IDENTITY
+    } else if dot < -0.9999 {
+        Quat::from_axis_angle(f.any_orthonormal_vector(), PI)
+    } else {
+        let axis = f.cross(t).normalize();
+        let angle = dot.acos();
+        Quat::from_axis_angle(axis, angle)
+    }
+}
+
+pub fn solve_two_bone_rotation() {
+
 }

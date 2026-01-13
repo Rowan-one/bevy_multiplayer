@@ -15,7 +15,7 @@ An open world PvPvE game with an emphasis on engaging, variable, high skill ceil
 
 **TODO**
 
-- ~~player camera & movement~~
+- ~player camera & movement~
 - terrain generation
 - ik system
 - enemy system
