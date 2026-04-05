@@ -23,10 +23,10 @@ fn main() {
             ClientPlayerPlugin,
             NetClientPlugin,
         ))
-        .add_plugins((
-            EguiPlugin::default(),
-            WorldInspectorPlugin::new(),
-        ))
+        // .add_plugins((
+        //     EguiPlugin::default(),
+        //     WorldInspectorPlugin::new(),
+        // ))
 
         .add_systems(Startup, setup_level)
         .run();
