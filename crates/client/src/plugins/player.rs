@@ -20,7 +20,7 @@ impl Plugin for ClientPlayerPlugin {
 
         app.add_systems(Update, (
             assign_local_player_system,
-            init_player_rig_system,
+            // init_player_rig_system,
             detect_bones_system,
             (
                 update_anim_state_time_system,
@@ -37,7 +37,7 @@ impl Plugin for ClientPlayerPlugin {
                 .before(networking::replication::receive_snapshots_system)
         ));
 
-        app.add_systems(PostUpdate, animate_player_system);
+        // app.add_systems(PostUpdate, animate_player_system);
     }
 }
 
@@ -86,6 +86,12 @@ pub fn init_player_rig_system(
                     .add(IKSegment::new(2.0, Some(bone_map.upper_arm_l)))
                     .add(IKSegment::new(1.0, Some(bone_map.forearm_l)))
                     .add(IKSegment::new(0.5, Some(bone_map.hand_l)))
+            )
+            .add_chain(
+                IKChain::new(target, IKSolverType::TwoBone)
+                    .add(IKSegment::new(2.0, Some(bone_map.upper_arm_r)))
+                    .add(IKSegment::new(1.0, Some(bone_map.forearm_r)))
+                    .add(IKSegment::new(0.5, Some(bone_map.hand_r)))
             );
 
         commands.entity(entity).insert(rig);
@@ -203,11 +209,15 @@ pub fn animate_player_system(
     anim_state_time: Single<&AnimStateTime, With<LocalPlayer>>,
     mut transforms: Query<&mut Transform, Without<LocalPlayer>>,
 ) {
-    let mut transform = transforms.get_mut(ik_rig.chains.get(0).unwrap().target).unwrap();
-    transform.translation = player_transform.translation
-        - (player_transform.right() * 0.5)
-        + (player_transform.forward() * ((time.elapsed_secs() * 5.).sin() * 0.5))
-        + (player_transform.up() * 0.0)
+    let mut left = transforms.get_mut(ik_rig.chains.get(0).unwrap().target).unwrap();
+    left.translation = player_transform.translation
+        - (player_transform.right() * 2.0)
+        + (player_transform.up() * -10.);
+
+    let mut right = transforms.get_mut(ik_rig.chains.get(1).unwrap().target).unwrap();
+    right.translation = player_transform.translation
+        - (player_transform.right() * 2.0)
+        + (player_transform.up() * -10.);
 }
 
 pub fn detect_bones_system(
@@ -278,7 +288,6 @@ pub fn detect_bones_system(
                         hand_l,
                         hand_r,
                     });
-                println!("got all bones");
             }
         }
     }
