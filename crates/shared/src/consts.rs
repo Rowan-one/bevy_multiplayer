@@ -8,8 +8,8 @@ pub const PLAYER_DEACCEL: f32 = 10.;
 pub const GROUND_FRICTION: f32 = 3.;
 
 pub const MAX_FRAME_TIME: f32 = 0.25;
-pub const SERVER_TICK_RATE: f32 = 1./10.;
-pub const CLIENT_TICK_RATE: f32 = 1./60.;
+pub const SERVER_TICK_RATE: f32 = 1. / 2.;
+pub const CLIENT_TICK_RATE: f32 = 1. / 60.;
 pub const TICKS_PER_SNAPSHOT: u8 = 1; // send a snapshot to client every n ticks
 pub const GRAVITY: f32 = -9.81;
 
