@@ -1,15 +1,15 @@
-use std::{net::UdpSocket, time::SystemTime};
-use bevy_rapier3d::prelude::*;
+use crate::server::ClientConnectMessage;
 use bevy::prelude::*;
+use bevy_rapier3d::prelude::*;
 use bevy_renet::{netcode::*, renet::RenetClient};
-use shared::components::*;
 use bevy_replicon::prelude::*;
 use bevy_replicon_renet::*;
+use shared::components::*;
 use shared::enums::IKSolverType;
 use shared::messages::ClientTickMessage;
 use shared::resources::*;
 use shared::structs::*;
-use crate::server::ClientConnectMessage;
+use std::{net::UdpSocket, time::SystemTime};
 
 use super::protocol::*;
 use super::replication::*;
@@ -29,14 +29,17 @@ impl Plugin for NetClientPlugin {
         app.replicate::<RestingHeight>();
 
         app.add_systems(Startup, setup_renet_client);
-        app.add_systems(Update, (
-            send_input_system,
-            replicate_players_system,
-            receive_snapshots_system,
-            update_id_map_system,
-            interpolate_entities_system,
-            receive_local_player_system,
-        ));
+        app.add_systems(
+            Update,
+            (
+                send_input_system,
+                replicate_players_system,
+                receive_snapshots_system,
+                update_id_map_system,
+                interpolate_entities_system,
+                receive_local_player_system,
+            ),
+        );
 
         app.add_message::<ClientConnectMessage>();
         app.add_message::<SnapshotReceiveMessage>();
@@ -46,13 +49,12 @@ impl Plugin for NetClientPlugin {
     }
 }
 
-fn setup_renet_client(
-    mut commands: Commands,
-    replicon_channels: Res<RepliconChannels>,
-) {
+fn setup_renet_client(mut commands: Commands, replicon_channels: Res<RepliconChannels>) {
     let server_addr = "127.0.0.1:5000".parse().unwrap();
     let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
-    let current_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap();
+    let current_time = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap();
     let client_id = current_time.as_millis() as u64;
     let authentication = ClientAuthentication::Unsecure {
         client_id,
@@ -68,7 +70,7 @@ fn setup_renet_client(
     commands.insert_resource(transport);
 }
 
-fn send_input_system(
+pub fn send_input_system(
     time: Res<Time>,
     mut client: ResMut<RenetClient>,
     mut input_sequence: ResMut<InputSequence>,
@@ -102,32 +104,33 @@ fn replicate_players_system(
     for entity in query.iter() {
         // player model
         let player_gltf: &str = "LowPolyCharacter.glb";
-        let scene: Handle<Scene> = asset_server.load(GltfAssetLabel::Scene(0).from_asset(player_gltf));
+        let scene: Handle<Scene> =
+            asset_server.load(GltfAssetLabel::Scene(0).from_asset(player_gltf));
 
-        commands.entity(entity).insert((
-            Name::new("Player"),
-            Velocity::default(),
-            CustomPosition(Vec3::new(0., 4., 0.)),
-            ServerPosition::default(),
-            CustomRotation::default(),
-            CustomVelocity::default(),
-            Gravity::default(),
-            Collider::ball(1.),
-            RigidBody::KinematicPositionBased,
-            Grounded(true),
-            Transform::default(),
-            WishDir::default(),
-            LookAngles::default(),
-            AnimStateTime::default(),
-            children![(
-                PlayerVisualRoot,
-                SceneRoot(scene),
-                Transform::from_xyz(0., -1.85, 0.),
-            )]
-        ))
-        .insert((
-            LoadingBoneCache,
-        ));
+        commands
+            .entity(entity)
+            .insert((
+                Name::new("Player"),
+                Velocity::default(),
+                CustomPosition(Vec3::new(0., 4., 0.)),
+                ServerPosition::default(),
+                CustomRotation::default(),
+                CustomVelocity::default(),
+                Gravity::default(),
+                Collider::ball(1.),
+                RigidBody::KinematicPositionBased,
+                Grounded(true),
+                Transform::default(),
+                WishDir::default(),
+                LookAngles::default(),
+                AnimStateTime::default(),
+                children![(
+                    PlayerVisualRoot,
+                    SceneRoot(scene),
+                    Transform::from_xyz(0., -1.85, 0.),
+                )],
+            ))
+            .insert((LoadingBoneCache,));
     }
 }
 
@@ -137,7 +140,10 @@ fn update_id_map_system(
 ) {
     for (entity, net_id) in query.iter() {
         id_map.0.insert(net_id.0, entity);
-        println!("Added entity to id map. id: {:?}, entity: {:?}", net_id.0, entity)
+        println!(
+            "Added entity to id map. id: {:?}, entity: {:?}",
+            net_id.0, entity
+        )
     }
 }
 
@@ -154,15 +160,23 @@ fn interpolate_entities_system(
     for (net_id, deque) in snapshot_buffer.0.iter() {
         // dont interpolate local player, that will be left to client prediction
         if let Some(local_player_id) = &local_player_net_id.0 {
-            if net_id == local_player_id { continue; }
+            if net_id == local_player_id {
+                continue;
+            }
         }
 
         // make sure we have at least 2 samples
-        if deque.len() < 2 { continue; }
+        if deque.len() < 2 {
+            continue;
+        }
 
         // get local entity
-        let Some(&entity) = id_map.0.get(net_id) else { continue; };
-        let Ok(mut transform) = transforms.get_mut(entity) else { continue; };
+        let Some(&entity) = id_map.0.get(net_id) else {
+            continue;
+        };
+        let Ok(mut transform) = transforms.get_mut(entity) else {
+            continue;
+        };
 
         let samples: Vec<EntitySnap> = deque.iter().copied().collect();
 
@@ -195,23 +209,15 @@ fn receive_local_player_system(
     let config = bincode::config::standard();
 
     while let Some(message) = client.receive_message(ServerChannel::AssignLocalPlayer) {
-        let (assign_local_player, _): (AssignLocalPlayer, usize) = bincode::serde::decode_from_slice(&message, config).unwrap();
-        println!("got assign local player. net id: {}", assign_local_player.player_net_id);
-        
-        // update local player resources 
+        let (assign_local_player, _): (AssignLocalPlayer, usize) =
+            bincode::serde::decode_from_slice(&message, config).unwrap();
+        println!(
+            "got assign local player. net id: {}",
+            assign_local_player.player_net_id
+        );
+
+        // update local player resources
         local_player_net_id.0 = Some(assign_local_player.player_net_id);
         pending_assign_local_player.0 = Some(assign_local_player);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-

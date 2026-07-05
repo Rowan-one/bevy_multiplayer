@@ -1,8 +1,11 @@
 use bevy::{color::palettes::css::*, prelude::*};
 use bevy_egui::egui::TextBuffer;
+use bevy_rapier3d::prelude::*;
 use networking::replication::{NetIdMap, SnapshotBuffer, SnapshotReceiveMessage};
-use shared::{components::*, consts::*, enums::IKSolverType, functions::*, messages::ClientTickMessage, resources::*};
-use bevy_rapier3d::{prelude::*};
+use shared::{
+    components::*, consts::*, enums::IKSolverType, functions::*, messages::ClientTickMessage,
+    resources::*,
+};
 
 pub struct ClientPlayerPlugin;
 impl Plugin for ClientPlayerPlugin {
@@ -10,7 +13,10 @@ impl Plugin for ClientPlayerPlugin {
         app.add_plugins(RapierPhysicsPlugin::<NoUserData>::default());
         app.add_plugins(RapierDebugRenderPlugin::default());
 
-        app.insert_resource(TimestepMode::Fixed { dt: CLIENT_TICK_RATE, substeps: 5 });
+        app.insert_resource(TimestepMode::Fixed {
+            dt: CLIENT_TICK_RATE,
+            substeps: 5,
+        });
 
         app.init_resource::<PendingAssignLocalPlayer>();
         app.init_resource::<LocalPlayerNetId>();
@@ -18,24 +24,29 @@ impl Plugin for ClientPlayerPlugin {
 
         app.add_message::<ClientTickMessage>();
 
-        app.add_systems(Update, (
-            assign_local_player_system,
-            // init_player_rig_system,
-            detect_bones_system,
+        app.add_systems(
+            Update,
             (
-                update_anim_state_time_system,
-                update_player_rotation_system,
-                server_reconciliation_system,
-                local_player_movement_system,
-                sync_player_transform_system,
-                draw_player_velocity_system,
-                draw_server_position_system,
-            ).chain()
-                .before(bevy_rapier3d::plugin::PhysicsSet::StepSimulation)
-                .before(bevy_rapier3d::plugin::PhysicsSet::SyncBackend)
-                .before(bevy_rapier3d::plugin::PhysicsSet::Writeback)
-                .before(networking::replication::receive_snapshots_system)
-        ));
+                assign_local_player_system,
+                // init_player_rig_system,
+                detect_bones_system,
+                (
+                    update_anim_state_time_system,
+                    update_player_rotation_system,
+                    local_player_movement_system,
+                    server_reconciliation_system,
+                    sync_player_transform_system,
+                    draw_player_velocity_system,
+                    draw_server_position_system,
+                )
+                    .chain()
+                    .after(networking::client::send_input_system)
+                    .before(bevy_rapier3d::plugin::PhysicsSet::StepSimulation)
+                    .before(bevy_rapier3d::plugin::PhysicsSet::SyncBackend)
+                    .before(bevy_rapier3d::plugin::PhysicsSet::Writeback)
+                    .before(networking::replication::receive_snapshots_system),
+            ),
+        );
 
         // app.add_systems(PostUpdate, animate_player_system);
     }
@@ -64,7 +75,9 @@ pub fn assign_local_player_system(
     // check if pending
     if let Some(assign_local_player) = &pending_assign.0 {
         // get player entity
-        let Some(player_entity) = net_id_map.0.get(&assign_local_player.player_net_id) else { return ; };
+        let Some(player_entity) = net_id_map.0.get(&assign_local_player.player_net_id) else {
+            return;
+        };
 
         println!("assigning local player");
         commands.entity(*player_entity).insert(LocalPlayer);
@@ -79,19 +92,21 @@ pub fn init_player_rig_system(
     mut query: Query<(Entity, &PlayerBoneMap), (With<LocalPlayer>, Added<PlayerBoneMap>)>,
 ) {
     for (entity, bone_map) in query.iter_mut() {
-        let target = commands.spawn((IKTarget, Transform::from_xyz(0., 1.5, 0.))).id();
+        let target = commands
+            .spawn((IKTarget, Transform::from_xyz(0., 1.5, 0.)))
+            .id();
         let rig = IKRig::default()
             .add_chain(
                 IKChain::new(target, IKSolverType::TwoBone)
                     .add(IKSegment::new(2.0, Some(bone_map.upper_arm_l)))
                     .add(IKSegment::new(1.0, Some(bone_map.forearm_l)))
-                    .add(IKSegment::new(0.5, Some(bone_map.hand_l)))
+                    .add(IKSegment::new(0.5, Some(bone_map.hand_l))),
             )
             .add_chain(
                 IKChain::new(target, IKSolverType::TwoBone)
                     .add(IKSegment::new(2.0, Some(bone_map.upper_arm_r)))
                     .add(IKSegment::new(1.0, Some(bone_map.forearm_r)))
-                    .add(IKSegment::new(0.5, Some(bone_map.hand_r)))
+                    .add(IKSegment::new(0.5, Some(bone_map.hand_r))),
             );
 
         commands.entity(entity).insert(rig);
@@ -107,7 +122,7 @@ pub fn update_player_rotation_system(
 
 pub fn local_player_movement_system(
     rapier_context: ReadRapierContext,
-    input: Res<PlayerInput>,
+    input_buffer: Res<ClientInputBuffer>,
     mut prev_player_pos: ResMut<PrevPlayerPos>,
     mut player_position: Single<&mut CustomPosition, With<LocalPlayer>>,
     mut player_velocity: Single<&mut CustomVelocity, With<LocalPlayer>>,
@@ -119,8 +134,14 @@ pub fn local_player_movement_system(
     mut tick_message: MessageReader<ClientTickMessage>,
 ) {
     for _tick in tick_message.read() {
+        let latest_input = input_buffer.0.last().unwrap();
         prev_player_pos.0 = player_position.0;
-        (player_position.0, player_velocity.0, player_wishdir.0, player_rotation.0) = simulate_player(
+        (
+            player_position.0,
+            player_velocity.0,
+            player_wishdir.0,
+            player_rotation.0,
+        ) = simulate_player(
             &rapier_context.single().unwrap(),
             player_position.0,
             player_rotation.0,
@@ -128,7 +149,7 @@ pub fn local_player_movement_system(
             &mut player_gravity,
             &mut player_grounded,
             player_resting_height.0,
-            &input, 
+            &latest_input.input,
             CLIENT_TICK_RATE,
         );
     }
@@ -151,10 +172,16 @@ pub fn server_reconciliation_system(
 ) {
     for _message in snapshot_receive_message.read() {
         // make sure local player id resource is initialized
-        let Some(local_player_id) = local_player_net_id.0 else { return; };
-        let Some(local_player_buf) = snapshot_buffer.0.get(&local_player_id) else { return; };
+        let Some(local_player_id) = local_player_net_id.0 else {
+            return;
+        };
+        let Some(local_player_buf) = snapshot_buffer.0.get(&local_player_id) else {
+            return;
+        };
         // TODO: fix order of interpolation buffer so latest sample is at index 0
-        let Some(latest_snap) = local_player_buf.get(local_player_buf.len()-1) else { return; };
+        let Some(latest_snap) = local_player_buf.get(local_player_buf.len() - 1) else {
+            return;
+        };
 
         // get last processed input sequence and re-compute inputs from that point
         let last_processed_seq = latest_snap.last_processed_seq;
@@ -163,15 +190,21 @@ pub fn server_reconciliation_system(
         client_input_buffer.0.sort_by_key(|i| i.seq);
 
         (player_position.0, player_velocity.0) = (latest_snap.position, latest_snap.velocity);
-        if let Some(gravity) = latest_snap.gravity { // this should exist
+        if let Some(gravity) = latest_snap.gravity {
+            // this should exist
             player_gravity.vector = gravity;
         }
-        
+
         player_server_position.0 = latest_snap.position;
 
         for payload in client_input_buffer.0.iter() {
             // println!("re-applying unprocessed input");
-            (player_position.0, player_velocity.0, player_wishdir.0, player_rotation.0) = simulate_player(
+            (
+                player_position.0,
+                player_velocity.0,
+                player_wishdir.0,
+                player_rotation.0,
+            ) = simulate_player(
                 &rapier_context.single().unwrap(),
                 player_position.0,
                 player_rotation.0,
@@ -209,14 +242,16 @@ pub fn animate_player_system(
     anim_state_time: Single<&AnimStateTime, With<LocalPlayer>>,
     mut transforms: Query<&mut Transform, Without<LocalPlayer>>,
 ) {
-    let mut left = transforms.get_mut(ik_rig.chains.get(0).unwrap().target).unwrap();
-    left.translation = player_transform.translation
-        - (player_transform.right() * 2.0)
+    let mut left = transforms
+        .get_mut(ik_rig.chains.get(0).unwrap().target)
+        .unwrap();
+    left.translation = player_transform.translation - (player_transform.right() * 2.0)
         + (player_transform.up() * -10.);
 
-    let mut right = transforms.get_mut(ik_rig.chains.get(1).unwrap().target).unwrap();
-    right.translation = player_transform.translation
-        - (player_transform.right() * 2.0)
+    let mut right = transforms
+        .get_mut(ik_rig.chains.get(1).unwrap().target)
+        .unwrap();
+    right.translation = player_transform.translation - (player_transform.right() * 2.0)
         + (player_transform.up() * -10.);
 }
 
@@ -248,7 +283,7 @@ pub fn detect_bones_system(
                     "DEF-forearm.R" => forearm_r = Some(e),
                     "DEF-hand.L" => hand_l = Some(e),
                     "DEF-hand.R" => hand_r = Some(e),
-                    _ => { }
+                    _ => {}
                 }
             }
 
@@ -276,7 +311,8 @@ pub fn detect_bones_system(
                 hand_l,
                 hand_r,
             ) {
-                commands.entity(root)
+                commands
+                    .entity(root)
                     .remove::<LoadingBoneCache>()
                     .insert(PlayerBoneMap {
                         shoulder_l,
@@ -299,13 +335,25 @@ pub fn draw_player_velocity_system(
     player_wishdir: Single<&mut WishDir, With<LocalPlayer>>,
     player_position: Single<&mut CustomPosition, With<LocalPlayer>>,
 ) {
-    gizmos.arrow(player_position.0, player_position.0 + player_velocity.0, GREEN);
-    gizmos.arrow(player_position.0, player_position.0 + player_wishdir.0, BLUE);
+    gizmos.arrow(
+        player_position.0,
+        player_position.0 + player_velocity.0,
+        GREEN,
+    );
+    gizmos.arrow(
+        player_position.0,
+        player_position.0 + player_wishdir.0,
+        BLUE,
+    );
 }
 
 pub fn draw_server_position_system(
     mut gizmos: Gizmos,
     player_server_position: Single<&mut ServerPosition, With<LocalPlayer>>,
 ) {
-    gizmos.sphere(Isometry3d::new(player_server_position.0, Quat::IDENTITY), 1.1, GREEN);
+    gizmos.sphere(
+        Isometry3d::new(player_server_position.0, Quat::IDENTITY),
+        1.1,
+        GREEN,
+    );
 }

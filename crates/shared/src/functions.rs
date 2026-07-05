@@ -1,33 +1,23 @@
-use std::f32::consts::PI;
-use bevy_ecs::prelude::*;
-use glam::{Quat, Vec2, Vec3};
-use bevy_rapier3d::{na::clamp, parry::shape::{Ball, Shape}, prelude::*};
 use crate::{components::*, consts::*, resources::PlayerInput};
+use bevy_ecs::prelude::*;
+use bevy_rapier3d::{
+    na::clamp,
+    parry::shape::{Ball, Shape},
+    prelude::*,
+};
+use glam::{Quat, Vec2, Vec3};
+use std::f32::consts::PI;
 
-pub fn integrate(
-    position: Vec3,
-    velocity: Vec3,
-    dt: f32,
-) -> Vec3 {
+pub fn integrate(position: Vec3, velocity: Vec3, dt: f32) -> Vec3 {
     position + velocity
 }
 
-pub fn spring_damper(
-    k: f32, 
-    c: f32, 
-    x: f32, 
-    x_dot: f32,
-    dt: f32,
-) -> f32 {
-    let f = (k*x) + (c*-x_dot) * dt;
+pub fn spring_damper(k: f32, c: f32, x: f32, x_dot: f32, dt: f32) -> f32 {
+    let f = (k * x) + (c * -x_dot) * dt;
     f.max(0.0)
 }
 
-pub fn apply_gravity(
-    velocity: Vec3,
-    scale: f32,
-    dt: f32,
-) -> Vec3 {
+pub fn apply_gravity(velocity: Vec3, scale: f32, dt: f32) -> Vec3 {
     let a = Vec3::new(0., GRAVITY, 0.) * scale * dt;
     velocity + a
 }
@@ -37,10 +27,7 @@ pub fn project_and_scale(v: Vec3, n: Vec3) -> Vec3 {
     project_onto_plane(v, n).normalize_or_zero() * mag
 }
 
-pub fn project_onto_plane(
-    v: Vec3,
-    n: Vec3,
-) -> Vec3 {
+pub fn project_onto_plane(v: Vec3, n: Vec3) -> Vec3 {
     v - n * v.dot(n)
 }
 
@@ -54,15 +41,25 @@ pub fn collide_and_slide(
     rapier_context: &RapierContext,
 ) -> Vec3 {
     // check if exceeded max depth
-    if depth >= MAX_COLLISION_BOUNCES { return Vec3::ZERO }
+    if depth >= MAX_COLLISION_BOUNCES {
+        return Vec3::ZERO;
+    }
 
     let dist: f32 = velocity.length() + SKIN_WIDTH;
 
-    if let Some(result) = rapier_context.cast_shape(position, Quat::IDENTITY, velocity.normalize(), shape, ShapeCastOptions::with_max_time_of_impact(dist), QueryFilter::only_fixed()) {
+    if let Some(result) = rapier_context.cast_shape(
+        position,
+        Quat::IDENTITY,
+        velocity.normalize(),
+        shape,
+        ShapeCastOptions::with_max_time_of_impact(dist),
+        QueryFilter::only_fixed(),
+    ) {
         let hit = result.1;
         let normal = hit.details.unwrap().normal1;
 
-        let mut snap_to_surface: Vec3 = velocity.normalize_or_zero() * (hit.time_of_impact - SKIN_WIDTH);
+        let mut snap_to_surface: Vec3 =
+            velocity.normalize_or_zero() * (hit.time_of_impact - SKIN_WIDTH);
         let mut leftover: Vec3 = velocity - snap_to_surface;
         let angle: f32 = Vec3::angle_between(Vec3::Y, normal).to_degrees();
 
@@ -78,17 +75,27 @@ pub fn collide_and_slide(
 
             leftover = project_and_scale(leftover, normal);
         } else {
-            let scale: f32 = 1.0 - Vec3::dot(
-                Vec3::new(normal.x, 0., normal.z).normalize_or_zero(),
-                -Vec3::new(vel_init.x, 0., vel_init.z).normalize_or_zero()
-            );
+            let scale: f32 = 1.0
+                - Vec3::dot(
+                    Vec3::new(normal.x, 0., normal.z).normalize_or_zero(),
+                    -Vec3::new(vel_init.x, 0., vel_init.z).normalize_or_zero(),
+                );
 
             leftover = project_and_scale(leftover, normal) * scale;
         }
 
-        return snap_to_surface + collide_and_slide(position + snap_to_surface, leftover, shape, depth+1, gravity_pass, vel_init, rapier_context);
+        return snap_to_surface
+            + collide_and_slide(
+                position + snap_to_surface,
+                leftover,
+                shape,
+                depth + 1,
+                gravity_pass,
+                vel_init,
+                rapier_context,
+            );
     }
-    
+
     velocity
 }
 
@@ -133,11 +140,11 @@ pub fn simulate_player(
     resting_height: f32,
     input: &PlayerInput,
     dt: f32,
-) -> (Vec3, Vec3, Vec3, Quat) { // (position, velocity, wish dir, rotation)
+) -> (Vec3, Vec3, Vec3, Quat) {
+    // (position, velocity, wish dir, rotation)
     // get player rotation from look angles
     let new_rot = Quat::from_axis_angle(Vec3::Y, input.look_angles.yaw);
-
-    let wish_dir = get_wish_dir(input, rotation);
+    let wish_dir = get_wish_dir(input, new_rot);
 
     velocity = update_vel_ground(wish_dir, velocity, dt);
 
@@ -151,7 +158,13 @@ pub fn simulate_player(
     gravity.vector = apply_gravity(gravity.vector, gravity.scale, dt);
 
     // apply ground check and spring damper
-    if let Some(result) = rapier_context.cast_ray(position, Vec3::NEG_Y, resting_height, true, QueryFilter::only_fixed()) {
+    if let Some(result) = rapier_context.cast_ray(
+        position,
+        Vec3::NEG_Y,
+        resting_height,
+        true,
+        QueryFilter::only_fixed(),
+    ) {
         grounded.0 = true;
 
         let x = resting_height - result.1;
@@ -159,7 +172,9 @@ pub fn simulate_player(
 
         let spring_force = spring_damper(1.0, 10.0, x, x_dot, dt);
         gravity.vector.y += spring_force;
-    } else { grounded.0 = false; }
+    } else {
+        grounded.0 = false;
+    }
 
     // integrate with collide and slide
     // scale velocity by delta time for integration
@@ -212,13 +227,14 @@ pub fn solve_two_bone_ik(
     b: Vec3, // initial mid position (elbow, knee)
     c: Vec3, // initial end position (hand, foot)
     t: Vec3, // target position
-) -> (Vec3, Vec3) { // returns (b position, c position)
-    let len_ab: f32 = (b-a).length();
-    let len_bc: f32 = (c-b).length();
-    let len_at: f32 = (t-a).length();
+) -> (Vec3, Vec3) {
+    // returns (b position, c position)
+    let len_ab: f32 = (b - a).length();
+    let len_bc: f32 = (c - b).length();
+    let len_at: f32 = (t - a).length();
 
     // unit vector from t to a
-    let mut n: Vec3 = (a-t).normalize();
+    let mut n: Vec3 = (a - t).normalize();
     if len_at < 0.001 {
         n = Vec3::new(1.0, 0.0, 0.);
     }
@@ -231,7 +247,6 @@ pub fn solve_two_bone_ik(
         let sign = if len_ab > len_bc { 1.0 } else { -1.0 };
         b_final = a - sign * len_ab * n;
         c_final = b_final + sign * len_bc * n;
-
     } else if len_at <= len_ab + len_bc {
         // target is reachable
         reached_target = true;
@@ -239,7 +254,7 @@ pub fn solve_two_bone_ik(
 
         // the final knee position will rest somewhere on a circle that is the intersecting point
         // of two spheres, the sphere of the radius len_ab and the sphere of the radius len_bc
-        
+
         // cos of angle t - a - b_final
         let cos_theta: f32 = // law of cosines
             (len_bc * len_bc - len_ab * len_ab - len_at * len_at) / (-2. * len_ab * len_at);
@@ -251,11 +266,10 @@ pub fn solve_two_bone_ik(
         // center of the circle
         let m: Vec3 = a - len_ab * cos_theta * n;
 
-        let u: Vec3 = perpendicular_unit_vector(n, b-m);
+        let u: Vec3 = perpendicular_unit_vector(n, b - m);
 
         // compute final knee position
         b_final = m + r * u;
-
     } else {
         // target is too far
         b_final = a - len_ab * n;
@@ -281,6 +295,4 @@ pub fn quat_from_to(from: Vec3, to: Vec3) -> Quat {
     }
 }
 
-pub fn solve_two_bone_rotation() {
-
-}
+pub fn solve_two_bone_rotation() {}
